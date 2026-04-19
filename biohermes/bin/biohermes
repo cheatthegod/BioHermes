@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# biohermes — convenience wrapper that launches `hermes` with the BioHermes
+# CLI config preset pre-loaded.
+#
+# The preset:
+#   - Registers the mcp_bioclaw stdio server (send_image / send_file).
+#   - Enables Tier B (smart_model_routing, approvals.mode=smart, checkpoints).
+#   - Pulls bioinformatics skills from the bundled optional-skills/ tree.
+#
+# Usage:
+#   biohermes                    # interactive chat
+#   biohermes chat -q "hello"    # one-shot query
+#   biohermes gateway            # run the messaging gateway
+#   biohermes mcp list           # inspect registered MCP servers
+#
+# Under the hood this is just `hermes <args>` with HERMES_CLI_CONFIG pointing
+# at <repo>/config-examples/biohermes-cli-config.yaml, so every hermes
+# subcommand is available unchanged.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CONFIG_PATH="$REPO_ROOT/config-examples/biohermes-cli-config.yaml"
+
+if [[ ! -f "$CONFIG_PATH" ]]; then
+  echo "biohermes: expected BioHermes config at $CONFIG_PATH" >&2
+  echo "biohermes: is this script running from inside a BioHermes checkout?" >&2
+  exit 1
+fi
+
+HERMES_BIN="${HERMES_BIN:-$(command -v hermes || true)}"
+if [[ -z "$HERMES_BIN" ]]; then
+  echo "biohermes: \`hermes\` not found on PATH." >&2
+  echo "biohermes: install hermes-agent with \`pip install -e .\` from the repo root, or set HERMES_BIN." >&2
+  exit 1
+fi
+
+# Also export BIOHERMES_REPO so the config template and any user-added
+# mcp_servers entries can reference paths relative to the checkout.
+export BIOHERMES_REPO="$REPO_ROOT"
+export HERMES_CLI_CONFIG="$CONFIG_PATH"
+
+exec "$HERMES_BIN" "$@"

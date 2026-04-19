@@ -1,0 +1,47 @@
+BioHermes
+=========
+
+BioHermes is a downstream distribution of Hermes Agent tailored for
+bioinformatics research workflows.  It adds a bio-specialized skill
+library, an MCP shim that provides BioClaw-compatible `send_image` /
+`send_file` tools, and an opinionated CLI config preset.
+
+BioHermes is licensed under the MIT License; see LICENSE for full terms.
+
+
+Upstream components retained under their original licenses
+----------------------------------------------------------
+
+Hermes Agent
+  Copyright (c) 2025 Nous Research
+  Licensed under the MIT License.
+  Source: https://github.com/NousResearch/hermes-agent
+  All files present in this repository that originate from Hermes Agent
+  remain under their original copyright.  BioHermes additions layered
+  on top (see "BioHermes-added files" below) are copyright BioHermes
+  contributors.
+
+BioClaw (skill source of truth)
+  Copyright (c) Runchuan-BU and BioClaw contributors
+  Licensed under the MIT License.
+  Source: https://github.com/Runchuan-BU/BioClaw
+  The skill library under optional-skills/bioinformatics/ is derived from
+  BioClaw's container/skills/ tree via the BioHermes skill migrator,
+  then adapted to Hermes's SKILL.md frontmatter schema.  See
+  `biohermes/skill_migrator.py` for the transformation rules.
+
+
+BioHermes-added files
+---------------------
+
+All content under these paths is new in BioHermes and is BioHermes
+copyright under MIT:
+
+  biohermes/                                  # shim + dev tools + wrapper
+  optional-skills/bioinformatics/             # migrated BioClaw skills (derivative work)
+  config-examples/biohermes-cli-config.yaml   # BioHermes CLI preset
+  docs/biohermes/                             # BioHermes design + execution docs
+  README.BioHermes.md                         # BioHermes-focused top-level README
+  NOTICE                                      # this file
+
+Unchanged Hermes Agent content retains its upstream copyright and license.
