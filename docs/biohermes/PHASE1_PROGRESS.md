@@ -2,7 +2,7 @@
 
 > 运行日期：2026-04-19（紧接 Phase 0.5）
 > 对应计划：`BIOCLAW_HERMES_PLAN_ZH.md` v10 §10 "Phase 1 — Foundation + Skills + Tier B"
-> 前置报告：`PHASE0_RESULTS.md`
+> 前置报告：`PHASE0_RESULTS.md`(注意:Phase 0 / Phase 1 当时在 **pre-fork 工作根** `BioClaw-Hermes/bioclaw-hermes-py/` 下执行;后续 fork-pattern pivot 把一切搬到了 `BioHermes/`——`bhermes` → `biohermes`,`bioclaw-hermes-py/hermes-profile/` → `.biohermes-profile/`,详细 remap 见 `PHASE0_RESULTS.md` 顶部)
 
 ---
 

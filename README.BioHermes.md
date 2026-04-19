@@ -39,17 +39,22 @@ cd BioHermes
 # 1. Install Hermes Agent from this fork (preserves our bio additions)
 pip install -e .                       # or: pip install -e .[all]
 
-# 2. Configure credentials
-cp .env.example ~/.hermes/.env         # add OPENROUTER_API_KEY or similar
+# 2. First `biohermes` invocation auto-creates .biohermes-profile/ and
+#    seeds its config.yaml from config-examples/biohermes-cli-config.yaml
+#    with <path-to-biohermes-checkout> substituted to your checkout.
+./biohermes/bin/biohermes --version    # triggers the seed
 
-# 3. Edit config-examples/biohermes-cli-config.yaml — replace
-#    <path-to-biohermes-checkout> with your actual checkout path
-#    (or set BIOHERMES_REPO env and substitute at startup)
+# 3. Put your provider credentials in the PROFILE'S .env — not ~/.hermes/.env,
+#    because the wrapper sets HERMES_HOME to the project-local profile.
+cat > .biohermes-profile/.env <<'EOF'
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+EOF
 
-# 4. Launch with the bio preset
+# 4. Launch
 ./biohermes/bin/biohermes chat -q "hello"
 ./biohermes/bin/biohermes mcp list        # verify mcp_bioclaw registered
-./biohermes/bin/biohermes skills list     # see 40 bioinformatics skills + Hermes defaults
+./biohermes/bin/biohermes skills list     # 40 bioinformatics skills + Hermes defaults = 114
 ```
 
 ## What's verified end-to-end
@@ -87,11 +92,58 @@ git merge upstream/main          # or: git rebase upstream/main
 # if upstream touches files we also touched (NOTICE, README.BioHermes.md).
 ```
 
+## How to reach BioClaw-style closed loop
+
+BioClaw's full loop is: user chats on WhatsApp → agent runs bio workflow → PDF/image comes back on WhatsApp. BioHermes reaches the same shape using Hermes's native gateway + `send_message` tool:
+
+```
+User (Telegram / Discord / Slack / WhatsApp / Signal / Matrix / WeChat)
+      │ chat
+      ▼
+Hermes gateway  —— sets {PLATFORM}_HOME_CHANNEL in agent env
+      │ spawn
+      ▼
+BioHermes agent  —— loads sec-report / atac-seq / etc. skill
+      │ invoke
+      ▼
+skill script  —— produces PDF / figure
+      │ invoke
+      ▼
+mcp_bioclaw_send_image  —— writes outbox/<ts>.pdf (record)
+                          returns "GATEWAY ACTIVE: call send_message(...)"
+      │ follow-up tool call
+      ▼
+send_message (built-in)  —— dispatches the attachment through the platform API
+      │
+      ▼
+User receives PDF in their chat
+```
+
+The mcp_bioclaw_send_image tool auto-detects gateway context via `*_HOME_CHANNEL` env vars. In CLI-only use it falls back to the outbox being the final delivery.
+
+To wire a platform end-to-end:
+
+```bash
+# 1. Pick a platform and set its credentials (one-time)
+./biohermes/bin/biohermes gateway setup           # interactive — Telegram bot token etc.
+
+# 2. Start the gateway in one shell
+./biohermes/bin/biohermes gateway start
+
+# 3. Send `/sethome` from the connected account so the gateway learns which
+#    chat to send cross-platform messages to (sets {PLATFORM}_HOME_CHANNEL).
+
+# 4. In another shell, chat with bio skills — outputs flow back via send_message.
+./biohermes/bin/biohermes chat -q "run sec-report on the attached ZIP and send me the PDF"
+```
+
+See `tools/send_message_tool.py:644` for Telegram photo dispatch, `:469` for Discord attachments.
+
 ## Known v0.1-alpha limitations
 
-1. **`<path-to-biohermes-checkout>` placeholder** in `config-examples/biohermes-cli-config.yaml` must be edited by hand. Templating via `BIOHERMES_REPO` is planned.
+1. **Config placeholder auto-substituted**: `<path-to-biohermes-checkout>` in `config-examples/biohermes-cli-config.yaml` is replaced by the wrapper at first launch — no manual edit needed.
 2. **`terminal.backend: local`** — the agent's `pip install` lands in the host Python env. Run under a throwaway venv if you want hard isolation; Docker / Singularity backends work too (just flip the config knob).
-3. **Gateway channels not wired** — `send_image` / `send_file` deliver to `~/.hermes/outbox/`. Re-enable IPC mode when connecting a messaging gateway.
+3. **Gateway delivery requires running `hermes gateway`** alongside the agent and setting a home channel. Without a running gateway, outbox is the final delivery. The shim detects this automatically.
 4. **Small-sample Phase 1 calibration** — 6 of 40 bio skills were end-to-end validated; the rest are mechanically migrated but not runtime-tested.
 5. **`bio-tools` and `bio-manuscript-common`** are resource skills expecting certain binaries / other bio-manuscript-* skills to be available; see their SKILL.md for details.
 

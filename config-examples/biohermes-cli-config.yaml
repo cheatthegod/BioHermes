@@ -9,9 +9,14 @@
 #
 # Prerequisites:
 #   1. `pip install -e .[all]` (or your chosen extras) from the BioHermes repo root
-#   2. `OPENROUTER_API_KEY` in ~/.hermes/.env  (or switch provider below)
-#   3. The `mcp_bioclaw_server.py` path in `mcp_servers.bioclaw.args` points at
-#      your BioHermes checkout — edit if your clone lives elsewhere.
+#   2. Put provider credentials in the PROFILE's .env — i.e.
+#      `<repo>/.biohermes-profile/.env`, not `~/.hermes/.env`.  The wrapper
+#      points HERMES_HOME at `.biohermes-profile/`, and Hermes's env loader
+#      only reads `$HERMES_HOME/.env` (see hermes_cli/env_loader.py).  The
+#      profile dir is created by the wrapper on first launch.
+#   3. The `<path-to-biohermes-checkout>` placeholders in the file are
+#      substituted by `biohermes/bin/biohermes` at first launch — no
+#      manual edit needed.
 
 model:
   default: "anthropic/claude-opus-4.6"
@@ -82,5 +87,20 @@ mcp_servers:
       # BioHermes checkout gets its own isolated outbox under
       # .biohermes-profile/, never touching the user's real ~/.hermes/.
       BIOCLAW_OUTBOX: <path-to-biohermes-checkout>/.biohermes-profile/outbox
+
+      # Gateway-awareness pass-through.  The shim reads these to decide
+      # whether to emit "GATEWAY ACTIVE: use send_message ..." guidance or
+      # treat the outbox copy as the final delivery.  The values are
+      # substituted from the agent process's env (Hermes gateway sets
+      # them when a home channel is configured: gateway/run.py:5756).
+      # Leaving these unset is safe — the shim just falls back to the
+      # CLI / outbox behaviour.
+      TELEGRAM_HOME_CHANNEL: ${TELEGRAM_HOME_CHANNEL}
+      DISCORD_HOME_CHANNEL: ${DISCORD_HOME_CHANNEL}
+      SLACK_HOME_CHANNEL: ${SLACK_HOME_CHANNEL}
+      WHATSAPP_HOME_CHANNEL: ${WHATSAPP_HOME_CHANNEL}
+      SIGNAL_HOME_CHANNEL: ${SIGNAL_HOME_CHANNEL}
+      MATRIX_HOME_CHANNEL: ${MATRIX_HOME_CHANNEL}
+      WEIXIN_HOME_CHANNEL: ${WEIXIN_HOME_CHANNEL}
     timeout: 30
     connect_timeout: 15

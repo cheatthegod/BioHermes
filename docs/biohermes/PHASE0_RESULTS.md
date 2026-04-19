@@ -2,8 +2,23 @@
 
 > 运行日期：2026-04-19
 > Hermes 版本：v0.9.0 (源码 checkout at `/home/ubuntu/cqr_files/claw_works/hermes-agent/`)
-> 工作根：`/home/ubuntu/cqr_files/Bioclaw_paper/BioClaw-Hermes/bioclaw-hermes-py/`
+> 工作根(执行时)：`/home/ubuntu/cqr_files/Bioclaw_paper/BioClaw-Hermes/bioclaw-hermes-py/`
 > 对应计划：`BIOCLAW_HERMES_PLAN_ZH.md` v10 §14.4（Day 1-2）
+
+> **路径重映射**(2026-04-19 fork-pattern pivot 之后)
+> 本报告中的路径反映 Phase 0 **当时执行**的目录。做了 fork-pattern pivot 之后工作根从 `BioClaw-Hermes/bioclaw-hermes-py/` 搬到了 `BioHermes/`(直接 fork NousResearch/hermes-agent 的硬 fork),落位对应关系:
+>
+> | Phase 0 当时路径 | 现在的对应位置 |
+> |---|---|
+> | `BioClaw-Hermes/bioclaw-hermes-py/` | `BioHermes/`(fork 根)|
+> | `bioclaw-hermes-py/tools/*.py` | `BioHermes/biohermes/*.py` |
+> | `bin/bhermes`(wrapper)| `BioHermes/biohermes/bin/biohermes` + `biohermes` console script |
+> | `bioclaw-hermes-py/hermes-profile/` | `BioHermes/.biohermes-profile/`(gitignored)|
+> | `hermes-profile/config.yaml` | `BioHermes/.biohermes-profile/config.yaml`(wrapper 从 `config-examples/biohermes-cli-config.yaml` 种子)|
+> | `hermes-profile/outbox/` | `BioHermes/.biohermes-profile/outbox/` |
+> | 被 migrate 的 skill 写到 profile 的 `skills/` | `BioHermes/optional-skills/bioinformatics/`(进 fork 仓库,`pip install -e .` 可直接 ship)|
+>
+> 下文其余部分保持历史原文,不做就地替换——方便和 git 记录对齐。
 
 ---
 
