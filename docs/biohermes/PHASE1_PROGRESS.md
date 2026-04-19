@@ -20,7 +20,7 @@
 - [x] ~~11 个未 spot check 的 moderate~~ **+ 1 未测 complex(bio-tools)—— 已在后续 C series 覆盖完,全部 agent-loop 通过**,详见 [`PHASE1_COVERAGE.md`](PHASE1_COVERAGE.md)。累计 moderate 13/13 + complex 2/2 在 agent-loop 层通过。
 - [x] **Tier B 配置**(smart_model_routing / approvals.mode / checkpoints.enabled)—— 本次完成,见 §6.5
 - [ ] Dockerfile / 多 terminal backend(留给 v1.0 路径)
-- [ ] **真实 gateway e2e**(Telegram / Slack / WhatsApp / …):闭环的 send_message 环节代码层已验证(`mcp_bioclaw_send_image` gateway-aware + simulated gateway test),但真 bot token 还没跑过,详见 [`A_TELEGRAM_E2E_RUNBOOK.md`](A_TELEGRAM_E2E_RUNBOOK.md)。
+- [ ] **真实 gateway e2e**(Feishu / Telegram / Discord / Slack / WhatsApp / Signal / Matrix / ...):闭环的 send_message 环节代码层已验证(`mcp_bioclaw_send_image` gateway-aware,14 个 `*_HOME_CHANNEL` env 检测,Telegram + Feishu 两次 simulated gateway 都让 shim 发出正确 `send_message(target=..., media_files=[...], text=...)` hint),但真 bot 还没跑过。按 [`A_GATEWAY_E2E_RUNBOOK.md`](A_GATEWAY_E2E_RUNBOOK.md) 执行——飞书路径最快(复用 user 已有 `~/.hermes/.env` 里的 7 个 FEISHU_* 凭证)。
 
 ## 2. mcp_bioclaw_server 实现与一个真实 bug 的发现
 
