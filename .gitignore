@@ -66,3 +66,8 @@ website/static/api/skills-index.json
 
 # BioHermes additions
 .biohermes-profile/
+
+# BioHermes build artifacts (local only)
+biohermes.egg-info/
+dist/
+build/

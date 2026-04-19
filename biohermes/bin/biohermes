@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
 # biohermes — launch Hermes against a BioHermes-scoped profile dir.
 #
-# Creates and maintains a profile at `<repo>/.biohermes-profile/` (gitignored)
-# which is seeded from `config-examples/biohermes-cli-config.yaml` on first
-# invocation, with `<path-to-biohermes-checkout>` placeholders expanded to
-# this checkout's absolute path.
+# The Python console script `biohermes` (biohermes.cli:main) is the
+# canonical entry point once the package is `pip install`-ed.  This bash
+# wrapper is here for people working directly inside a checkout before
+# install — it does the same seeding logic with the same three
+# placeholders.
 #
-# Hermes reads its config from `$HERMES_HOME/config.yaml` (see hermes_cli/
-# config.py:210), so setting HERMES_HOME is the only knob that actually
-# picks up the bio preset.  The user's real `~/.hermes/` is left alone.
-#
-# Usage:
-#   biohermes                       # interactive chat
-#   biohermes chat -q "hello"       # one-shot query
-#   biohermes gateway               # run the messaging gateway
-#   biohermes mcp list              # inspect registered MCP servers
+# Preset placeholders substituted at first launch:
+#   <biohermes-mcp-shim>       absolute path to mcp_bioclaw_server.py
+#   <biohermes-outbox>         absolute path to <profile>/outbox/
+#   <biohermes-skills-dir>     absolute path to bundled bio skills
+#                              (dropped from the config when that dir
+#                              does not exist — e.g. wheel installs)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PRESET_PATH="$REPO_ROOT/config-examples/biohermes-cli-config.yaml"
 PROFILE_DIR="$REPO_ROOT/.biohermes-profile"
+SKILLS_DIR="$REPO_ROOT/optional-skills/bioinformatics"
+MCP_SHIM="$SCRIPT_DIR/../mcp_bioclaw_server.py"
+OUTBOX_DIR="$PROFILE_DIR/outbox"
 
 if [[ ! -f "$PRESET_PATH" ]]; then
   echo "biohermes: expected BioHermes config preset at $PRESET_PATH" >&2
@@ -28,35 +29,55 @@ if [[ ! -f "$PRESET_PATH" ]]; then
   exit 1
 fi
 
-HERMES_BIN="${HERMES_BIN:-$(command -v hermes || true)}"
+# Prefer a sibling hermes (installed alongside biohermes in the same
+# venv / prefix); fall back to PATH; honor HERMES_BIN override.
+if [[ -z "${HERMES_BIN:-}" ]]; then
+  SCRIPT_PARENT="$(dirname "$SCRIPT_DIR")"
+  if [[ -x "$SCRIPT_PARENT/../bin/hermes" ]]; then
+    HERMES_BIN="$SCRIPT_PARENT/../bin/hermes"
+  else
+    HERMES_BIN="$(command -v hermes || true)"
+  fi
+fi
 if [[ -z "$HERMES_BIN" ]]; then
-  echo "biohermes: \`hermes\` not found on PATH." >&2
-  echo "biohermes: install hermes-agent with \`pip install -e .\` from the repo root, or set HERMES_BIN." >&2
+  echo "biohermes: \`hermes\` not found on PATH; set HERMES_BIN to override." >&2
   exit 1
 fi
 
 mkdir -p "$PROFILE_DIR"
 
-# Optional explicit reseed: `biohermes --reseed-biohermes ...` backs up
-# the existing config.yaml then re-emits from the preset.  Without this
-# flag, we NEVER overwrite an existing profile config — the user may
-# have edited it via `hermes config set`, slash-commands, or by hand,
-# and silently re-seeding after a `git pull` that touched the preset
-# would clobber those edits.
 FORCE_RESEED=0
 if [[ "${1:-}" == "--reseed-biohermes" ]]; then
   FORCE_RESEED=1
   shift
 fi
 
+_seed_config() {
+  local out="$1"
+  if [[ -d "$SKILLS_DIR" ]]; then
+    sed \
+      -e "s|<biohermes-mcp-shim>|$MCP_SHIM|g" \
+      -e "s|<biohermes-outbox>|$OUTBOX_DIR|g" \
+      -e "s|<biohermes-skills-dir>|$SKILLS_DIR|g" \
+      "$PRESET_PATH" > "$out"
+  else
+    # Strip external_dirs line pointing at missing skills dir.
+    sed \
+      -e "s|<biohermes-mcp-shim>|$MCP_SHIM|g" \
+      -e "s|<biohermes-outbox>|$OUTBOX_DIR|g" \
+      "$PRESET_PATH" \
+      | sed -E '/^[[:space:]]+external_dirs:/{N;/- <biohermes-skills-dir>/d}' \
+      > "$out"
+  fi
+}
+
 CONFIG_TARGET="$PROFILE_DIR/config.yaml"
 if [[ ! -f "$CONFIG_TARGET" ]]; then
-  # First launch — seed from preset.
-  sed "s|<path-to-biohermes-checkout>|$REPO_ROOT|g" "$PRESET_PATH" > "$CONFIG_TARGET"
+  _seed_config "$CONFIG_TARGET"
 elif [[ "$FORCE_RESEED" -eq 1 ]]; then
   backup="$CONFIG_TARGET.bak-$(date +%s)"
   mv "$CONFIG_TARGET" "$backup"
-  sed "s|<path-to-biohermes-checkout>|$REPO_ROOT|g" "$PRESET_PATH" > "$CONFIG_TARGET"
+  _seed_config "$CONFIG_TARGET"
   echo "biohermes: backed up existing config to $backup; reseeded from preset." >&2
 fi
 

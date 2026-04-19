@@ -153,7 +153,10 @@ Per [`docs/biohermes/PHASE1_PROGRESS.md`](docs/biohermes/PHASE1_PROGRESS.md):
 
 1. **Telegram / Discord / … e2e not yet run with a real bot token.** Gateway mode is verified in simulation; a real messaging e2e (chat → agent → PDF returned in chat) is the next validation.
 2. **`terminal.backend: local`** — the agent's `pip install` lands in the host Python env. Run under a throwaway venv if you want hard isolation; Docker / Singularity backends work too.
-3. **`pip install -e .` required.** Non-editable `pip install` currently can't find `config-examples/` / `optional-skills/bioinformatics/` via package data. Follow-up.
+3. **Non-editable `pip install` does NOT ship the bio skills.** The core runtime (`biohermes`, `biohermes-reseed`, `hermes` entry points, the MCP shim, the preset) does install correctly from a wheel and was verified end-to-end. But `optional-skills/bioinformatics/` (40 skills) is not in the wheel — this mirrors upstream Hermes, whose wheels also don't ship `optional-skills/`. For bio skills, use one of:
+   - **Editable install** (recommended): `pip install -e .` from the checkout — bio skills are then visible via `skills.external_dirs` in the auto-seeded config.
+   - **Manual copy** for non-editable users: `cp -r optional-skills/bioinformatics ~/.biohermes/skills/` after `pip install biohermes`.
+   - A future `biohermes-bundle-skills` console script will fetch skills from the fork automatically.
 4. **Skill runtime coverage is sampled.** 6 of 40 skills were end-to-end validated; remaining 34 are mechanically migrated but not runtime-tested.
 5. **`bio-tools` and `bio-manuscript-common`** are resource skills expecting certain binaries / sibling skills to be available; see their SKILL.md for details.
 

@@ -1,4 +1,13 @@
 graft skills
 graft optional-skills
+# BioHermes bio layer — ensure the preset + shim + bundled bio skills
+# ship in sdist and wheel.  `optional-skills/bioinformatics/` is covered
+# by `graft optional-skills` above; the rest sit outside a Python package
+# and need explicit grafts.
+graft biohermes
+graft config-examples
+graft docs/biohermes
+include NOTICE
+include HERMES_UPSTREAM_README.md
 global-exclude __pycache__
 global-exclude *.py[cod]

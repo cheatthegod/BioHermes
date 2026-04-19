@@ -3,12 +3,16 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hermes-agent"
-version = "0.10.0"
-description = "The self-improving AI agent — creates skills from experience, improves them during use, and runs anywhere"
+name = "biohermes"
+version = "0.1.0a0"
+description = "BioHermes — bioinformatics research assistant on the Hermes Agent runtime (fork of NousResearch/hermes-agent with a BioClaw-derived bio skill layer)"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "Nous Research" }]
+authors = [
+  { name = "BioHermes contributors" },
+  { name = "Nous Research" },          # upstream Hermes Agent
+  { name = "BioClaw contributors" },   # upstream skill source
+]
 license = { text = "MIT" }
 dependencies = [
   # Core — pinned to known-good ranges to limit supply chain attack surface
@@ -34,6 +38,10 @@ dependencies = [
   "edge-tts>=7.2.7,<8",
   # Skills Hub (GitHub App JWT auth — optional, only needed for bot identity)
   "PyJWT[crypto]>=2.12.0,<3",  # CVE-2026-32597
+  # BioHermes: the mcp_bioclaw shim (biohermes/mcp_bioclaw_server.py) is
+  # a stdio MCP server, so `mcp` is required for any BioHermes install
+  # — not an optional extra the way upstream Hermes treats it.
+  "mcp>=1.2.0,<2",
 ]
 
 [project.optional-dependencies]
@@ -69,12 +77,12 @@ termux = [
   # avoiding extras that currently depend on non-Android wheels (notably
   # faster-whisper -> ctranslate2 via the voice extra).
   "python-telegram-bot[webhooks]>=22.6,<23",
-  "hermes-agent[cron]",
-  "hermes-agent[cli]",
-  "hermes-agent[pty]",
-  "hermes-agent[mcp]",
-  "hermes-agent[honcho]",
-  "hermes-agent[acp]",
+  "biohermes[cron]",
+  "biohermes[cli]",
+  "biohermes[pty]",
+  "biohermes[mcp]",
+  "biohermes[honcho]",
+  "biohermes[acp]",
 ]
 dingtalk = ["dingtalk-stream>=0.20,<1", "alibabacloud-dingtalk>=2.0.0", "qrcode>=7.0,<8"]
 feishu = ["lark-oapi>=1.5.3,<2", "qrcode>=7.0,<8"]
@@ -88,30 +96,30 @@ rl = [
 ]
 yc-bench = ["yc-bench @ git+https://github.com/collinear-ai/yc-bench.git@bfb0c88062450f46341bd9a5298903fc2e952a5c ; python_version >= '3.12'"]
 all = [
-  "hermes-agent[modal]",
-  "hermes-agent[daytona]",
-  "hermes-agent[messaging]",
+  "biohermes[modal]",
+  "biohermes[daytona]",
+  "biohermes[messaging]",
   # matrix: python-olm (required by matrix-nio[e2e]) is upstream-broken on
   # modern macOS (archived libolm, C++ errors with Clang 21+).  On Linux the
   # [matrix] extra's own marker pulls in the [e2e] variant automatically.
-  "hermes-agent[matrix]; sys_platform == 'linux'",
-  "hermes-agent[cron]",
-  "hermes-agent[cli]",
-  "hermes-agent[dev]",
-  "hermes-agent[tts-premium]",
-  "hermes-agent[slack]",
-  "hermes-agent[pty]",
-  "hermes-agent[honcho]",
-  "hermes-agent[mcp]",
-  "hermes-agent[homeassistant]",
-  "hermes-agent[sms]",
-  "hermes-agent[acp]",
-  "hermes-agent[voice]",
-  "hermes-agent[dingtalk]",
-  "hermes-agent[feishu]",
-  "hermes-agent[mistral]",
-  "hermes-agent[bedrock]",
-  "hermes-agent[web]",
+  "biohermes[matrix]; sys_platform == 'linux'",
+  "biohermes[cron]",
+  "biohermes[cli]",
+  "biohermes[dev]",
+  "biohermes[tts-premium]",
+  "biohermes[slack]",
+  "biohermes[pty]",
+  "biohermes[honcho]",
+  "biohermes[mcp]",
+  "biohermes[homeassistant]",
+  "biohermes[sms]",
+  "biohermes[acp]",
+  "biohermes[voice]",
+  "biohermes[dingtalk]",
+  "biohermes[feishu]",
+  "biohermes[mistral]",
+  "biohermes[bedrock]",
+  "biohermes[web]",
 ]
 
 [project.scripts]
@@ -126,6 +134,12 @@ py-modules = ["run_agent", "model_tools", "toolsets", "batch_runner", "trajector
 
 [tool.setuptools.package-data]
 hermes_cli = ["web_dist/**/*"]
+# BioHermes: ship the embedded preset + shim scripts inside the biohermes
+# package so non-editable (`pip install .`) installs carry everything
+# needed.  _preset_config.yaml is kept in sync with
+# config-examples/biohermes-cli-config.yaml; see biohermes/cli.py for the
+# resolution order (repo checkout → package data).
+biohermes = ["_preset_config.yaml", "bin/biohermes"]
 
 [tool.setuptools.packages.find]
 include = ["agent", "tools", "tools.*", "hermes_cli", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "biohermes", "biohermes.*"]
