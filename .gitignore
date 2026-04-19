@@ -63,3 +63,6 @@ mini-swe-agent/
 .nix-stamps/
 result
 website/static/api/skills-index.json
+
+# BioHermes additions
+.biohermes-profile/

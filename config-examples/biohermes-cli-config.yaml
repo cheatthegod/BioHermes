@@ -38,6 +38,11 @@ memory:
 
 skills:
   creation_nudge_interval: 15
+  # Register BioHermes's bundled bio skills as an external dir so they load
+  # without re-running `pip install -e .` from the fork.  The wrapper
+  # substitutes <path-to-biohermes-checkout> at first launch.
+  external_dirs:
+    - <path-to-biohermes-checkout>/optional-skills/bioinformatics
 
 display:
   compact: false
@@ -62,17 +67,20 @@ checkpoints:
   max_snapshots: 50
 
 # BioHermes-specific external MCP shim — implements send_image / send_file
-# as a replacement for the BioClaw agent-runner IPC tools.  Replace the
-# `<path>` below with your checkout path (or set BIOHERMES_REPO env var and
-# template the config at generation time).
+# as a replacement for the BioClaw agent-runner IPC tools.
+#
+# The `<path-to-biohermes-checkout>` placeholder is substituted by the
+# `biohermes/bin/biohermes` wrapper at first launch (or you can edit this
+# file by hand and point it at your checkout).
 mcp_servers:
   bioclaw:
     command: python3
     args:
       - <path-to-biohermes-checkout>/biohermes/mcp_bioclaw_server.py
     env:
-      # Required for the shim to resolve the outbox.  Typically ~/.hermes
-      # (the default HERMES_HOME) is fine; override for per-project outbox.
-      BIOCLAW_OUTBOX: ${HOME}/.hermes/outbox
+      # Profile-scoped outbox.  The wrapper templates this path so every
+      # BioHermes checkout gets its own isolated outbox under
+      # .biohermes-profile/, never touching the user's real ~/.hermes/.
+      BIOCLAW_OUTBOX: <path-to-biohermes-checkout>/.biohermes-profile/outbox
     timeout: 30
     connect_timeout: 15

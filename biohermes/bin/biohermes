@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
-# biohermes — convenience wrapper that launches `hermes` with the BioHermes
-# CLI config preset pre-loaded.
+# biohermes — launch Hermes against a BioHermes-scoped profile dir.
 #
-# The preset:
-#   - Registers the mcp_bioclaw stdio server (send_image / send_file).
-#   - Enables Tier B (smart_model_routing, approvals.mode=smart, checkpoints).
-#   - Pulls bioinformatics skills from the bundled optional-skills/ tree.
+# Creates and maintains a profile at `<repo>/.biohermes-profile/` (gitignored)
+# which is seeded from `config-examples/biohermes-cli-config.yaml` on first
+# invocation, with `<path-to-biohermes-checkout>` placeholders expanded to
+# this checkout's absolute path.
+#
+# Hermes reads its config from `$HERMES_HOME/config.yaml` (see hermes_cli/
+# config.py:210), so setting HERMES_HOME is the only knob that actually
+# picks up the bio preset.  The user's real `~/.hermes/` is left alone.
 #
 # Usage:
-#   biohermes                    # interactive chat
-#   biohermes chat -q "hello"    # one-shot query
-#   biohermes gateway            # run the messaging gateway
-#   biohermes mcp list           # inspect registered MCP servers
-#
-# Under the hood this is just `hermes <args>` with HERMES_CLI_CONFIG pointing
-# at <repo>/config-examples/biohermes-cli-config.yaml, so every hermes
-# subcommand is available unchanged.
+#   biohermes                       # interactive chat
+#   biohermes chat -q "hello"       # one-shot query
+#   biohermes gateway               # run the messaging gateway
+#   biohermes mcp list              # inspect registered MCP servers
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CONFIG_PATH="$REPO_ROOT/config-examples/biohermes-cli-config.yaml"
+PRESET_PATH="$REPO_ROOT/config-examples/biohermes-cli-config.yaml"
+PROFILE_DIR="$REPO_ROOT/.biohermes-profile"
 
-if [[ ! -f "$CONFIG_PATH" ]]; then
-  echo "biohermes: expected BioHermes config at $CONFIG_PATH" >&2
+if [[ ! -f "$PRESET_PATH" ]]; then
+  echo "biohermes: expected BioHermes config preset at $PRESET_PATH" >&2
   echo "biohermes: is this script running from inside a BioHermes checkout?" >&2
   exit 1
 fi
@@ -35,9 +35,15 @@ if [[ -z "$HERMES_BIN" ]]; then
   exit 1
 fi
 
-# Also export BIOHERMES_REPO so the config template and any user-added
-# mcp_servers entries can reference paths relative to the checkout.
+mkdir -p "$PROFILE_DIR"
+
+# Seed (or reseed) the profile config if absent or older than the preset.
+# Template the <path-to-biohermes-checkout> placeholder to this checkout.
+if [[ ! -f "$PROFILE_DIR/config.yaml" || "$PRESET_PATH" -nt "$PROFILE_DIR/config.yaml" ]]; then
+  sed "s|<path-to-biohermes-checkout>|$REPO_ROOT|g" "$PRESET_PATH" > "$PROFILE_DIR/config.yaml"
+fi
+
 export BIOHERMES_REPO="$REPO_ROOT"
-export HERMES_CLI_CONFIG="$CONFIG_PATH"
+export HERMES_HOME="$PROFILE_DIR"
 
 exec "$HERMES_BIN" "$@"
