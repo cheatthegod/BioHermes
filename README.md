@@ -157,7 +157,7 @@ Per [`docs/biohermes/PHASE1_PROGRESS.md`](docs/biohermes/PHASE1_PROGRESS.md):
    - **Editable install** (recommended): `pip install -e .` from the checkout — bio skills are then visible via `skills.external_dirs` in the auto-seeded config.
    - **Manual copy** for non-editable users: `cp -r optional-skills/bioinformatics ~/.biohermes/skills/` after `pip install biohermes`.
    - A future `biohermes-bundle-skills` console script will fetch skills from the fork automatically.
-4. **Skill runtime coverage is sampled.** 6 of 40 skills were end-to-end validated; remaining 34 are mechanically migrated but not runtime-tested.
+4. **Skill runtime coverage is tiered.** As of [`docs/biohermes/PHASE1_COVERAGE.md`](docs/biohermes/PHASE1_COVERAGE.md): all 13 moderate + 2 complex skills have passed agent-loop consultation (agent reads SKILL.md and answers grounded questions correctly; 100% on those tiers). 3 of 24 trivial skills were consulted — the remaining 21 are mostly API-query wrappers of the same shape as the ones tested. Full-pipeline runtime validation (e.g. actually running MACS3, Kraken2, scanpy workflows end-to-end) has so far been done for `sec-report` only; other deep runtimes are Phase 1 part 2 work.
 5. **`bio-tools` and `bio-manuscript-common`** are resource skills expecting certain binaries / sibling skills to be available; see their SKILL.md for details.
 
 ## Credits

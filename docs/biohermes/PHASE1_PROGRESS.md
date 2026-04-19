@@ -17,9 +17,10 @@
 
 尚未覆盖(留给 Phase 1 后半段):
 
-- [ ] 11 个未 spot check 的 moderate(非阻塞,抽样已覆盖四个维度:API / D1 bin / D2 heavy py / D3 cross-skill)+ 1 未测 complex(bio-tools)
+- [x] ~~11 个未 spot check 的 moderate~~ **+ 1 未测 complex(bio-tools)—— 已在后续 C series 覆盖完,全部 agent-loop 通过**,详见 [`PHASE1_COVERAGE.md`](PHASE1_COVERAGE.md)。累计 moderate 13/13 + complex 2/2 在 agent-loop 层通过。
 - [x] **Tier B 配置**(smart_model_routing / approvals.mode / checkpoints.enabled)—— 本次完成,见 §6.5
 - [ ] Dockerfile / 多 terminal backend(留给 v1.0 路径)
+- [ ] **真实 gateway e2e**(Telegram / Slack / WhatsApp / …):闭环的 send_message 环节代码层已验证(`mcp_bioclaw_send_image` gateway-aware + simulated gateway test),但真 bot token 还没跑过,详见 [`A_TELEGRAM_E2E_RUNBOOK.md`](A_TELEGRAM_E2E_RUNBOOK.md)。
 
 ## 2. mcp_bioclaw_server 实现与一个真实 bug 的发现
 
