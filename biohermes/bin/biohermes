@@ -37,10 +37,27 @@ fi
 
 mkdir -p "$PROFILE_DIR"
 
-# Seed (or reseed) the profile config if absent or older than the preset.
-# Template the <path-to-biohermes-checkout> placeholder to this checkout.
-if [[ ! -f "$PROFILE_DIR/config.yaml" || "$PRESET_PATH" -nt "$PROFILE_DIR/config.yaml" ]]; then
-  sed "s|<path-to-biohermes-checkout>|$REPO_ROOT|g" "$PRESET_PATH" > "$PROFILE_DIR/config.yaml"
+# Optional explicit reseed: `biohermes --reseed-biohermes ...` backs up
+# the existing config.yaml then re-emits from the preset.  Without this
+# flag, we NEVER overwrite an existing profile config — the user may
+# have edited it via `hermes config set`, slash-commands, or by hand,
+# and silently re-seeding after a `git pull` that touched the preset
+# would clobber those edits.
+FORCE_RESEED=0
+if [[ "${1:-}" == "--reseed-biohermes" ]]; then
+  FORCE_RESEED=1
+  shift
+fi
+
+CONFIG_TARGET="$PROFILE_DIR/config.yaml"
+if [[ ! -f "$CONFIG_TARGET" ]]; then
+  # First launch — seed from preset.
+  sed "s|<path-to-biohermes-checkout>|$REPO_ROOT|g" "$PRESET_PATH" > "$CONFIG_TARGET"
+elif [[ "$FORCE_RESEED" -eq 1 ]]; then
+  backup="$CONFIG_TARGET.bak-$(date +%s)"
+  mv "$CONFIG_TARGET" "$backup"
+  sed "s|<path-to-biohermes-checkout>|$REPO_ROOT|g" "$PRESET_PATH" > "$CONFIG_TARGET"
+  echo "biohermes: backed up existing config to $backup; reseeded from preset." >&2
 fi
 
 export BIOHERMES_REPO="$REPO_ROOT"
