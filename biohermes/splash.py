@@ -236,6 +236,72 @@ def render(
         console.print()
         console.print(panel)
         console.print()
+        if os.environ.get("BIOHERMES_NO_ANIMATION", "").strip() not in {"1", "true", "yes"}:
+            _boot_animation(console)
+    except Exception:
+        return
+
+
+def _boot_animation(console) -> None:
+    """Brief 'booting' sequence shown below the static splash panel.
+
+    Total runtime ~750ms.  Disabled by `BIOHERMES_NO_ANIMATION=1`.
+    Cycles through bio emoji + status messages, then collapses to a
+    one-line "ready" tick before yielding to Hermes.
+
+    Implementation note: uses Rich's Live for in-place updates instead
+    of separate prints, so the final terminal state is just one short
+    "✓ ready" line — no scrollback noise.
+    """
+    import time
+    try:
+        from rich.live import Live
+        from rich.text import Text
+        from rich.spinner import Spinner
+        from rich.console import Group
+    except ImportError:
+        return
+
+    # Stages: each (emoji, message, duration_seconds)
+    stages = [
+        ("🧬", "initializing bioinformatics agent",  0.20),
+        ("🔬", "loading 40 bio skills",              0.18),
+        ("⚗",  "wiring mcp_bioclaw shim",            0.15),
+        ("📡", "checking gateway channels",          0.12),
+        ("🧪", "ready",                              0.05),
+    ]
+
+    def _frame(emoji: str, msg: str, dots: int) -> Text:
+        out = Text()
+        out.append("    ")
+        out.append(f"  {emoji}  ", style="bold #00ff9c")
+        out.append(msg, style="#00d4ff")
+        out.append("." * dots, style="dim #5a8a8a")
+        out.append(" " * (4 - dots), style="")  # avoid jitter
+        return out
+
+    try:
+        with Live(
+            _frame("🧬", "initializing bioinformatics agent", 0),
+            console=console,
+            refresh_per_second=20,
+            transient=True,  # erase the live region when we exit (clean handoff)
+        ) as live:
+            for emoji, msg, dur in stages:
+                # Animate dots growing during this stage
+                steps = max(1, int(dur / 0.05))
+                for i in range(steps):
+                    dots = i % 4
+                    live.update(_frame(emoji, msg, dots))
+                    time.sleep(dur / steps)
+        # After live exits, leave a single "ready" line as the final mark
+        ready = Text()
+        ready.append("    ")
+        ready.append("  ✓  ", style="bold #00ff9c")
+        ready.append("BioHermes ready", style="bold #00d4ff")
+        ready.append("  →  handing off to chat", style="dim #5a8a8a")
+        console.print(ready)
+        console.print()
     except Exception:
         return
 

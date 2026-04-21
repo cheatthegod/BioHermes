@@ -156,6 +156,40 @@ def _ensure_skin_installed(layout: dict, *, force: bool = False) -> None:
     target.write_bytes(package_skin.read_bytes())
 
 
+def _ensure_soul_installed(layout: dict, *, force: bool = False) -> None:
+    """Install BioHermes SOUL.md (agent system-prompt persona) into
+    <HERMES_HOME>/SOUL.md.  Hermes seeds its own default SOUL.md at
+    `hermes_cli/config.py:289` if absent — by writing ours first we
+    ensure the agent identifies as BioHermes, not Hermes Agent.
+
+    Policy: do not overwrite an existing SOUL.md unless `force=True`,
+    so users who hand-edit their persona keep their changes through
+    biohermes upgrades.  Override semantics: if the file exists and
+    matches Hermes's default verbatim (i.e. never customized), still
+    overwrite — the user clearly hasn't put work in.
+    """
+    package_soul = _package_dir() / "SOUL.md.template"
+    if not package_soul.is_file():
+        return
+    target = layout["profile_dir"] / "SOUL.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    if target.is_file() and not force:
+        # Detect default Hermes SOUL.md (the upstream NousResearch one);
+        # if so, replace it.  Otherwise leave alone.
+        try:
+            existing = target.read_text(encoding="utf-8")
+        except OSError:
+            return
+        # Heuristic: upstream default starts with "You are Hermes Agent"
+        # and is one paragraph (~600 chars).  Our template is multi-section
+        # markdown with headers.
+        if not existing.lstrip().startswith("You are Hermes Agent"):
+            return  # custom file, preserve
+
+    target.write_text(package_soul.read_text(encoding="utf-8"), encoding="utf-8")
+
+
 def _find_hermes_bin() -> str:
     """Prefer the `hermes` binary that belongs to this Python prefix —
     in a venv `sys.prefix/bin/hermes` is the one that matches this
@@ -199,6 +233,10 @@ def main() -> int:
     # Install BioHermes skin into <HERMES_HOME>/skins/ so Hermes loads it.
     # First-launch only by default; --reseed-biohermes refreshes it too.
     _ensure_skin_installed(layout, force=force_reseed)
+
+    # Install BioHermes SOUL.md so the agent identifies as BioHermes
+    # instead of Hermes Agent.  Same first-launch policy.
+    _ensure_soul_installed(layout, force=force_reseed)
 
     os.environ["BIOHERMES_REPO"] = str(layout["profile_dir"].parent)
     os.environ["HERMES_HOME"] = str(layout["profile_dir"])

@@ -139,7 +139,7 @@ hermes_cli = ["web_dist/**/*"]
 # needed.  _preset_config.yaml is kept in sync with
 # config-examples/biohermes-cli-config.yaml; see biohermes/cli.py for the
 # resolution order (repo checkout → package data).
-biohermes = ["_preset_config.yaml", "bin/biohermes", "skins/biohermes.yaml"]
+biohermes = ["_preset_config.yaml", "bin/biohermes", "skins/biohermes.yaml", "SOUL.md.template"]
 
 [tool.setuptools.packages.find]
 include = ["agent", "tools", "tools.*", "hermes_cli", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "biohermes", "biohermes.*"]
