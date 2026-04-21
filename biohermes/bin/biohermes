@@ -13,21 +13,32 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Find a Python with the right deps. Prefer:
-#   1. Caller's PYTHON env var
-#   2. Sibling python in same prefix as `hermes` (matches our hermes install)
-#   3. Generic python3 on PATH
+# Pick the Python that matches the hermes install — Hermes has many
+# transitive deps (fire, anthropic, openai, …) that an arbitrary system
+# python won't have.  Resolution order:
+#   1. Caller's PYTHON env var (explicit override)
+#   2. Shebang of the `hermes` console_script (most reliable: the script
+#      itself records which interpreter has hermes-agent's deps)
+#   3. Fallback: python3 on PATH (will likely fail with ModuleNotFoundError
+#      if the install isn't done — this is intentional, surfaces the
+#      problem instead of running a broken environment)
 PYTHON="${PYTHON:-}"
 if [[ -z "$PYTHON" ]]; then
-  if [[ -n "${HERMES_BIN:-}" && -x "$(dirname "$HERMES_BIN")/python" ]]; then
-    PYTHON="$(dirname "$HERMES_BIN")/python"
-  else
-    HBIN="$(command -v hermes 2>/dev/null || true)"
-    if [[ -n "$HBIN" && -x "$(dirname "$HBIN")/python" ]]; then
-      PYTHON="$(dirname "$HBIN")/python"
-    else
-      PYTHON="$(command -v python3)"
+  HBIN="${HERMES_BIN:-$(command -v hermes 2>/dev/null || true)}"
+  if [[ -n "$HBIN" && -r "$HBIN" ]]; then
+    SHEBANG="$(head -1 "$HBIN" 2>/dev/null)"
+    if [[ "$SHEBANG" =~ ^#! ]]; then
+      CAND="${SHEBANG#\#!}"
+      # Drop trailing arguments (e.g. `#!/usr/bin/env python3` keeps just env;
+      # but for a venv python it's normally a clean path).
+      CAND="${CAND%% *}"
+      if [[ -x "$CAND" ]]; then
+        PYTHON="$CAND"
+      fi
     fi
+  fi
+  if [[ -z "$PYTHON" ]]; then
+    PYTHON="$(command -v python3)"
   fi
 fi
 

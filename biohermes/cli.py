@@ -197,6 +197,9 @@ def _find_hermes_bin() -> str:
     avoids following the venv's Python symlink out to the base install,
     which would miss the venv-local hermes.  Fall back to PATH search,
     and honor HERMES_BIN for unusual layouts.
+
+    Used as a fallback launch path (out-of-process exec) when in-process
+    invocation isn't available.
     """
     override = os.environ.get("HERMES_BIN")
     if override:
@@ -213,6 +216,37 @@ def _find_hermes_bin() -> str:
         "`pip install .` (or `-e .`) from the repo root, or set HERMES_BIN.\n"
     )
     sys.exit(1)
+
+
+def _try_inprocess_launch(argv_rest: list[str]) -> bool:
+    """Apply branding monkey-patches and invoke hermes_cli.main:main()
+    in-process.  Returns True on a clean run/exit (sys.exit raised),
+    False if hermes_cli isn't importable (caller should fall back to
+    out-of-process exec).
+
+    In-process mode is required for the monkey-patches in
+    biohermes/_patch_branding.py to take effect — os.execv would
+    replace this Python process with a fresh one and lose the patches.
+    """
+    try:
+        from biohermes import _patch_branding
+        _patch_branding.apply()
+        from hermes_cli.main import main as _hermes_main
+    except Exception:
+        return False
+
+    # Hermes parses sys.argv[1:] starting with the subcommand.  Mirror
+    # what `hermes <args...>` would receive on the command line.
+    sys.argv = ["hermes", *argv_rest]
+    try:
+        rc = _hermes_main()
+    except SystemExit:
+        raise
+    except Exception:
+        # Any unexpected error → let it propagate; the user sees a real
+        # traceback instead of biohermes silently swallowing.
+        raise
+    sys.exit(rc if isinstance(rc, int) else 0)
 
 
 def main() -> int:
@@ -253,6 +287,14 @@ def main() -> int:
             )
     except Exception:
         pass
+
+    # Prefer in-process launch so our branding monkey-patches in
+    # biohermes/_patch_branding.py take effect (replaces "Hermes Agent
+    # v0.X" strings + suppresses the noisy welcome panel).  Falls back
+    # to out-of-process exec if hermes_cli isn't importable in this
+    # Python (e.g. user set HERMES_BIN to a different env's hermes).
+    if _try_inprocess_launch(argv_rest):
+        return  # _try_inprocess_launch sys.exits on success
 
     hermes_bin = _find_hermes_bin()
     os.execv(hermes_bin, [hermes_bin, *argv_rest])
