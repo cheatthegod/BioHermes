@@ -1,22 +1,24 @@
-"""biohermes/splash.py — pre-launch BioHermes splash screen.
+"""biohermes/splash.py — neofetch-style splash screen with animated status.
 
-Vertical-stacked layout (no Table.grid width competition) so the title
-+ DNA helix + status panel render predictably across terminal widths
-70 → 200+ columns.
+Inspired by neofetch / fastfetch / starship — compact 2-column layout
+with an iconic DNA helix on the left and a dense status grid on the
+right.  Each status row "checks in" one at a time (~60ms per row) so
+the splash feels alive instead of static.
 
-Renders to stderr and silently aborts on any error so the agent always
-launches.  Gated by `should_show()` — skipped for `-q`, `--version`,
-`--help`, `--no-splash`, or non-TTY invocations.
+Reads profile config for provider / smart-routing / MCP / gateway /
+outbox state.  Renders to stderr.  All errors caught silently so the
+agent always launches.
 """
 from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 
-# Hermes gateway env vars the shim watches; used to summarize gateway state.
+# Gateway env vars the bio shim watches; used for "● Gateway" status.
 _GATEWAY_VARS = (
     ("TELEGRAM_HOME_CHANNEL", "Telegram"),
     ("DISCORD_HOME_CHANNEL", "Discord"),
@@ -35,34 +37,44 @@ _GATEWAY_VARS = (
 )
 
 
-# Compact 5-line block-letter wordmark for "BIOHERMES".  Hand-laid-out so
-# total width is constant (no proportional rendering surprises).  Width:
-# exactly 53 columns including the leading space.  Fits in any terminal
-# ≥ 60 cols wide.
-WORDMARK = [
-    " ██████╗ ██╗ ██████╗ ██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗",
-    " ██╔══██╗██║██╔═══██╗██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝",
-    " ██████╔╝██║██║   ██║███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗",
-    " ██╔══██╗██║██║   ██║██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║",
-    " ██████╔╝██║╚██████╔╝██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║",
-    " ╚═════╝ ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝",
+# Vertical DNA double helix — 11 rows, 7 cols wide.  Base pair rungs
+# alternate AT and GC; phosphate backbone curves ╲ ╱ ╳ ╱ ╲.  Carefully
+# hand-laid so backbone diagonals meet at the ╳ crossover.
+DNA_HELIX = [
+    "   A═══T   ",
+    "    ╲ ╱    ",
+    "     ╳     ",
+    "    ╱ ╲    ",
+    "   G═══C   ",
+    "    ╲ ╱    ",
+    "     ╳     ",
+    "    ╱ ╲    ",
+    "   T═══A   ",
+    "    ╲ ╱    ",
+    "     ╳     ",
 ]
 
-
-# DNA helix — 4 base-pair "rungs", rendered horizontally as a single line
-# so it never wraps regardless of terminal width.
-DNA_LINE = "  G═C  ╲╱  T═A  ╳  C═G  ╳  A═T  ╳  G═C  ╲╱  T═A  ╳  C═G  ╲╱  A═T  "
+# Rainbow-ish gradient down the helix (teal → green → cyan → purple → teal).
+_HELIX_PALETTE = [
+    "#00d9b2", "#00d9b2", "#00ffaa", "#00ff9c", "#00ff9c",
+    "#00d4ff", "#7c5cff", "#7c5cff", "#00d4ff", "#00d9b2", "#00d9b2",
+]
 
 
 def _try_import_rich():
     try:
-        from rich.console import Console
+        from rich.console import Console, Group
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
         from rich.align import Align
-        from rich.console import Group
-        return Console, Panel, Table, Text, Align, Group
+        from rich.columns import Columns
+        from rich.live import Live
+        return {
+            "Console": Console, "Group": Group, "Panel": Panel,
+            "Table": Table, "Text": Text, "Align": Align,
+            "Columns": Columns, "Live": Live,
+        }
     except ImportError:
         return None
 
@@ -87,36 +99,181 @@ def _count_outbox(profile_dir: Path) -> int:
 
 
 def _count_bio_skills(checkout_root: Path) -> int:
-    candidates = [checkout_root / "optional-skills" / "bioinformatics"]
-    for d in candidates:
+    for d in [checkout_root / "optional-skills" / "bioinformatics"]:
         if d.is_dir():
             return sum(1 for p in d.iterdir() if p.is_dir() and (p / "SKILL.md").is_file())
     return 0
 
 
-def _gateway_status() -> str:
-    active = []
+def _active_gateways() -> list[str]:
+    out = []
     for var, label in _GATEWAY_VARS:
-        value = os.environ.get(var, "").strip()
-        if value and not value.startswith("${"):
-            active.append(label)
-    if not active:
-        return "⊘  CLI-only"
-    if len(active) == 1:
-        return f"●  {active[0]}"
-    return f"●  {len(active)} channels ({', '.join(active[:3])}{'…' if len(active) > 3 else ''})"
+        v = os.environ.get(var, "").strip()
+        if v and not v.startswith("${"):
+            out.append(label)
+    return out
 
 
-def _shorten_path(p: Path, max_len: int = 50) -> str:
-    """Shorten a path with ~ for $HOME and middle ellipsis if too long."""
+def _shorten_path(p: Path, max_len: int = 42) -> str:
     s = str(p)
     home = str(Path.home())
     if s.startswith(home):
         s = "~" + s[len(home):]
     if len(s) <= max_len:
         return s
-    keep = max_len - 3
-    return s[: keep // 2] + "…" + s[-(keep - keep // 2):]
+    return s[: max_len // 2 - 1] + "…" + s[-(max_len - max_len // 2):]
+
+
+# ── Status rows assembled from config ──────────────────────────────────────
+
+def _collect_status_rows(profile_dir: Path, checkout_root: Path) -> list[tuple[str, str]]:
+    cfg = _read_config(profile_dir)
+
+    # Runtime / provider
+    model = cfg.get("model") or {}
+    provider = model.get("provider", "?")
+    default_model = model.get("default", "?")
+    # Shorten provider/model string if too long
+    prov_model = f"{provider} · {default_model}"
+    if len(prov_model) > 42:
+        prov_model = prov_model[:41] + "…"
+
+    # Smart routing
+    sr = cfg.get("smart_model_routing") or {}
+    if sr.get("enabled"):
+        cheap = sr.get("cheap_model") or {}
+        smart = f"→ {cheap.get('model', '?')}"
+    else:
+        smart = "off"
+
+    # Approvals
+    ap = cfg.get("approvals") or {}
+    approvals = ap.get("mode", "manual")
+
+    # Checkpoints
+    cp = cfg.get("checkpoints") or {}
+    ckpt = "enabled" if cp.get("enabled", False) else "off"
+
+    # Bio skills
+    bio_n = _count_bio_skills(checkout_root)
+    bio_str = f"{bio_n} workflows" if bio_n else "(not bundled)"
+
+    # MCP
+    mcp_servers = list((cfg.get("mcp_servers") or {}).keys())
+    mcp_str = ", ".join(mcp_servers) if mcp_servers else "(none)"
+
+    # Gateway
+    gws = _active_gateways()
+    if not gws:
+        gw = "⊘ CLI-only"
+    elif len(gws) == 1:
+        gw = f"● {gws[0]}"
+    else:
+        gw = f"● {len(gws)} channels"
+
+    # Outbox
+    obn = _count_outbox(profile_dir)
+    outbox_str = f"{obn} files in outbox"
+
+    # Profile
+    prof = _shorten_path(profile_dir)
+
+    return [
+        ("Runtime",      "Hermes Agent · in-process"),
+        ("Provider",     prov_model),
+        ("Smart route",  smart),
+        ("Approvals",    approvals),
+        ("Checkpoints",  ckpt),
+        ("Bio skills",   bio_str),
+        ("MCP tools",    mcp_str),
+        ("Gateway",      gw),
+        ("Profile",      prof),
+        ("Outbox",       outbox_str),
+    ]
+
+
+# ── Rendering primitives ───────────────────────────────────────────────────
+
+def _colored_helix(R):
+    """Return a Rich Text of the DNA helix with gradient colors."""
+    t = R["Text"]()
+    for i, line in enumerate(DNA_HELIX):
+        color = _HELIX_PALETTE[i % len(_HELIX_PALETTE)]
+        t.append(line, style=f"bold {color}")
+        if i < len(DNA_HELIX) - 1:
+            t.append("\n")
+    return t
+
+
+def _status_frame(R, rows: list[tuple[str, str]], revealed: int):
+    """Build a status grid where only `revealed` rows show values.
+
+    Unrevealed rows show a dim "checking…" placeholder with a spinner
+    dot; revealed rows show "●" indicator in bright green and the
+    real value.
+    """
+    Table = R["Table"]
+    Text = R["Text"]
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(no_wrap=True, width=1)   # dot indicator
+    grid.add_column(no_wrap=True, width=12, style="bold #00d4ff")  # label
+    grid.add_column(overflow="ellipsis")     # value
+
+    # Simple rotating spinner for unrevealed rows
+    spinner_chars = "◐◓◑◒"
+    phase = int(time.time() * 10) % len(spinner_chars)
+
+    for i, (label, value) in enumerate(rows):
+        if i < revealed:
+            dot = Text("●", style="bold #00ff9c")
+            val = Text(value, style="#e0fff8")
+        else:
+            dot = Text(spinner_chars[phase], style="dim #5a8a8a")
+            val = Text("checking…", style="dim italic #5a8a8a")
+        grid.add_row(dot, Text(label, style="bold #00d4ff"), val)
+
+    return grid
+
+
+def _header_text(R, version: str, install_mode: str):
+    """Title for the outer panel."""
+    Text = R["Text"]
+    t = Text()
+    t.append("  🧬  ", style="bold #00ff9c")
+    t.append("BIOHERMES ", style="bold #00ff9c")
+    t.append(f"v{version}", style="dim #00d4ff")
+    t.append("  ·  ", style="dim #5a8a8a")
+    t.append(install_mode, style="dim italic #5a8a8a")
+    t.append("  ·  ", style="dim #5a8a8a")
+    t.append("built on ", style="dim #5a8a8a")
+    t.append("BioClaw", style="bold #7c5cff")
+    t.append(" · powered by ", style="dim #5a8a8a")
+    t.append("Hermes Agent", style="bold #00d4ff")
+    t.append("  ", style="")
+    return t
+
+
+def _footer_text(R):
+    Text = R["Text"]
+    t = Text()
+    t.append("● ready  ·  ", style="bold #00ff9c")
+    t.append("/skills", style="bold #00ffaa")
+    t.append("  ·  ", style="dim #5a8a8a")
+    t.append("/help", style="bold #00ffaa")
+    t.append("  ·  ", style="dim #5a8a8a")
+    t.append("or just describe what you want", style="italic #00d4ff")
+    return t
+
+
+def _build_layout(R, helix, status_grid):
+    """Combine helix + status into a 2-column Table (neofetch-style)."""
+    Table = R["Table"]
+    Text = R["Text"]
+    layout = Table.grid(padding=(0, 3))
+    layout.add_column(no_wrap=True)  # helix column (fixed width)
+    layout.add_column(ratio=1)       # status column (flex)
+    layout.add_row(helix, status_grid)
+    return layout
 
 
 def render(
@@ -126,181 +283,55 @@ def render(
     install_mode: str = "editable",
     version: str = "0.1.0a0",
 ) -> None:
-    rich = _try_import_rich()
-    if rich is None:
+    R = _try_import_rich()
+    if R is None:
         return
-    Console, Panel, Table, Text, Align, Group = rich
+    Console = R["Console"]
+    Panel = R["Panel"]
+    Group = R["Group"]
+    Live = R["Live"]
+    Text = R["Text"]
 
     console = Console(stderr=True, force_terminal=True)
     width = console.size.width
-
-    # If terminal is too narrow even for the compact wordmark, skip splash
-    # entirely — Hermes's own compact banner will take over.
     if width < 70:
         return
 
-    cfg = _read_config(profile_dir)
-    model = cfg.get("model") or {}
-    provider = model.get("provider", "?")
-    default_model = model.get("default", "?")
+    rows = _collect_status_rows(profile_dir, checkout_root)
 
-    smart_routing = cfg.get("smart_model_routing") or {}
-    smart_enabled = smart_routing.get("enabled", False)
-    cheap = smart_routing.get("cheap_model") or {}
-    cheap_str = (
-        f"→ {cheap.get('provider', '?')}/{cheap.get('model', '?')}"
-        if smart_enabled
-        else "off"
-    )
-
-    approvals = cfg.get("approvals") or {}
-    approvals_mode = approvals.get("mode", "?")
-
-    checkpoints = cfg.get("checkpoints") or {}
-    checkpoints_str = "enabled" if checkpoints.get("enabled", False) else "off"
-
-    mcp_servers = list((cfg.get("mcp_servers") or {}).keys())
-    mcp_str = ", ".join(mcp_servers) if mcp_servers else "(none)"
-
-    bio_skill_count = _count_bio_skills(checkout_root)
-    outbox_n = _count_outbox(profile_dir)
-    gateway = _gateway_status()
-    profile_str = _shorten_path(profile_dir, 50)
-    outbox_str = f"{_shorten_path(profile_dir / 'outbox', 50)}  ({outbox_n} files)"
-
-    # ── Build content (vertical stack — no Table.grid) ─────────────────────
-    content_parts = []
-
-    # 1. Wordmark — solid teal-green color (no gradient → predictable widths)
-    wordmark = Text()
-    for line in WORDMARK:
-        wordmark.append(line, style="bold #00ff9c")
-        wordmark.append("\n")
-    wordmark.append(
-        "        bio skills × Hermes runtime",
-        style="dim italic #00d4ff",
-    )
-    content_parts.append(Align.center(wordmark))
-
-    # 2. Spacer
-    content_parts.append(Text(""))
-
-    # 3. DNA helix — single line, alternating colors per base pair
-    dna = Text()
-    # Color each segment differently so it looks like a helix
-    segments = DNA_LINE.split("  ")  # split on double-space gaps between rungs
-    palette = ["#00ff9c", "#00d4ff", "#7c5cff", "#00d4ff"]
-    for i, seg in enumerate(segments):
-        if seg.strip():
-            dna.append(seg, style=f"bold {palette[i % len(palette)]}")
-        if i < len(segments) - 1:
-            dna.append("  ")
-    content_parts.append(Align.center(dna))
-
-    # 4. Spacer
-    content_parts.append(Text(""))
-
-    # 5. Status grid (single column, simple key:value rows)
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style="bold #00ffaa", no_wrap=True, min_width=14)
-    grid.add_column(style="#e0fff8")
-
-    grid.add_row("🔬  Provider",    f"{provider} · {default_model}")
-    grid.add_row("🧪  Smart route", f"{cheap_str}")
-    grid.add_row("🛡   Approvals",   f"mode = {approvals_mode}")
-    grid.add_row("💾  Checkpoints", checkpoints_str)
-    grid.add_row("🧬  Bio skills",  f"{bio_skill_count} workflows")
-    grid.add_row("⚗   MCP shim",    mcp_str)
-    grid.add_row("📡  Gateway",     gateway)
-    grid.add_row("🗂   Outbox",      outbox_str)
-    grid.add_row("🏠  Profile",     profile_str)
-    grid.add_row("📦  Install",     f"{install_mode} · v{version}")
-    content_parts.append(Align.center(grid))
-
-    # ── Compose panel ──────────────────────────────────────────────────────
-    body = Group(*content_parts)
-    panel = Panel(
-        body,
-        border_style="#00d9b2",
-        padding=(1, 2),
-        title=Text(" 🧬 BIOHERMES 🧬 ", style="bold #00ff9c on #0a1f1a"),
-        title_align="center",
-        subtitle=Text(
-            "type /skills · /help · or describe what you want",
-            style="dim #5a8a8a",
-        ),
-        subtitle_align="center",
-    )
+    def _panel_for(revealed: int):
+        helix = _colored_helix(R)
+        status = _status_frame(R, rows, revealed)
+        layout = _build_layout(R, helix, status)
+        body = Group(Text(""), layout, Text(""), _footer_text(R))
+        return Panel(
+            body,
+            border_style="#00d9b2",
+            padding=(0, 2),
+            title=_header_text(R, version, install_mode),
+            title_align="left",
+            subtitle=Text(
+                "type /skills · /help · or describe your bio task",
+                style="dim italic #5a8a8a",
+            ),
+            subtitle_align="right",
+        )
 
     try:
         console.print()
-        console.print(panel)
-        console.print()
-        if os.environ.get("BIOHERMES_NO_ANIMATION", "").strip() not in {"1", "true", "yes"}:
-            _boot_animation(console)
-    except Exception:
-        return
-
-
-def _boot_animation(console) -> None:
-    """Brief 'booting' sequence shown below the static splash panel.
-
-    Total runtime ~750ms.  Disabled by `BIOHERMES_NO_ANIMATION=1`.
-    Cycles through bio emoji + status messages, then collapses to a
-    one-line "ready" tick before yielding to Hermes.
-
-    Implementation note: uses Rich's Live for in-place updates instead
-    of separate prints, so the final terminal state is just one short
-    "✓ ready" line — no scrollback noise.
-    """
-    import time
-    try:
-        from rich.live import Live
-        from rich.text import Text
-        from rich.spinner import Spinner
-        from rich.console import Group
-    except ImportError:
-        return
-
-    # Stages: each (emoji, message, duration_seconds)
-    stages = [
-        ("🧬", "initializing bioinformatics agent",  0.20),
-        ("🔬", "loading 40 bio skills",              0.18),
-        ("⚗",  "wiring mcp_bioclaw shim",            0.15),
-        ("📡", "checking gateway channels",          0.12),
-        ("🧪", "ready",                              0.05),
-    ]
-
-    def _frame(emoji: str, msg: str, dots: int) -> Text:
-        out = Text()
-        out.append("    ")
-        out.append(f"  {emoji}  ", style="bold #00ff9c")
-        out.append(msg, style="#00d4ff")
-        out.append("." * dots, style="dim #5a8a8a")
-        out.append(" " * (4 - dots), style="")  # avoid jitter
-        return out
-
-    try:
-        with Live(
-            _frame("🧬", "initializing bioinformatics agent", 0),
-            console=console,
-            refresh_per_second=20,
-            transient=True,  # erase the live region when we exit (clean handoff)
-        ) as live:
-            for emoji, msg, dur in stages:
-                # Animate dots growing during this stage
-                steps = max(1, int(dur / 0.05))
-                for i in range(steps):
-                    dots = i % 4
-                    live.update(_frame(emoji, msg, dots))
-                    time.sleep(dur / steps)
-        # After live exits, leave a single "ready" line as the final mark
-        ready = Text()
-        ready.append("    ")
-        ready.append("  ✓  ", style="bold #00ff9c")
-        ready.append("BioHermes ready", style="bold #00d4ff")
-        ready.append("  →  handing off to chat", style="dim #5a8a8a")
-        console.print(ready)
+        animate = os.environ.get("BIOHERMES_NO_ANIMATION", "").strip() not in {"1", "true", "yes"}
+        if animate:
+            with Live(
+                _panel_for(0),
+                console=console,
+                refresh_per_second=20,
+                transient=False,  # keep the final state on screen
+            ) as live:
+                for i in range(len(rows) + 1):
+                    live.update(_panel_for(i))
+                    time.sleep(0.055)  # ~60ms per row
+        else:
+            console.print(_panel_for(len(rows)))
         console.print()
     except Exception:
         return
