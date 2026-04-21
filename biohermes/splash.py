@@ -82,6 +82,75 @@ _SCRAMBLE_CHARS = "█▓▒░#@$%*+◼◻▪▫"
 _SPARK_BLOCKS = "▁▂▃▄▅▆▇█"
 
 
+# ── Decorative DNA helix (horizontal, scrolls during figlet reveal) ───────
+
+# 20-pair motif — when window scrolls, sequence looks natural, not periodic.
+_DNA_POOL = (
+    ("A", "T"), ("G", "C"), ("T", "A"), ("C", "G"),
+    ("T", "A"), ("A", "T"), ("C", "G"), ("G", "C"),
+    ("G", "C"), ("T", "A"), ("A", "T"), ("C", "G"),
+    ("A", "T"), ("C", "G"), ("G", "C"), ("T", "A"),
+    ("T", "A"), ("G", "C"), ("A", "T"), ("C", "G"),
+)
+
+# Per-nucleotide neon color (pink / cyan / gold / purple).
+_BASE_COLOR = {
+    "A": "#ff4da1",
+    "T": "#00d9ff",
+    "G": "#ffd24d",
+    "C": "#a07fff",
+}
+_DNA_BACKBONE = "#00d9b2"   # bonds (━) + twist strokes (╲ ╱ ╳)
+
+
+def _build_dna_lines(scroll_offset: int = 0, n_show: int = 9) -> tuple:
+    """Render 5 lines of horizontal DNA helix, window starting at
+    `scroll_offset` mod len(_DNA_POOL).  Each pair takes a 5-char
+    cell `X━━━Y` + 3-char gap; crossings `╲ ╱ / ╳ / ╱ ╲` fill the gap.
+    Returns 5 raw strings (top bases, upper twist, mid twist, lower twist,
+    bottom bases) — all padded to the same width for easy alignment.
+    """
+    start = scroll_offset % len(_DNA_POOL)
+    pairs = [_DNA_POOL[(start + i) % len(_DNA_POOL)] for i in range(n_show)]
+
+    top = " " + "   ".join(f"{a}━━━{b}" for a, b in pairs)
+    bot = " " + "   ".join(f"{b}━━━{a}" for a, b in pairs)
+    w = max(len(top), len(bot))
+
+    up = list(" " * w)
+    mid = list(" " * w)
+    dn = list(" " * w)
+    for i in range(n_show - 1):
+        c = 6 + 8 * i       # col of ╲ in gap between pair i and pair i+1
+        if c + 2 < w:
+            up[c]     = "╲"
+            up[c + 2] = "╱"
+            mid[c + 1] = "╳"
+            dn[c]     = "╱"
+            dn[c + 2] = "╲"
+    return (top, "".join(up), "".join(mid), "".join(dn), bot)
+
+
+def _dna_crown(R, scroll_offset: int = 0):
+    """Render the 5-line DNA helix crown with per-nucleotide coloring,
+    centered horizontally."""
+    Text = R["Text"]
+    Align = R["Align"]
+    Group = R["Group"]
+    rows = []
+    for line in _build_dna_lines(scroll_offset):
+        t = Text(no_wrap=True)
+        for ch in line:
+            if ch in _BASE_COLOR:
+                t.append(ch, style=f"bold {_BASE_COLOR[ch]}")
+            elif ch in "━╲╱╳":
+                t.append(ch, style=f"bold {_DNA_BACKBONE}")
+            else:
+                t.append(ch)
+        rows.append(Align.center(t))
+    return Group(*rows)
+
+
 # ── Skill classifier → 6 canonical categories ─────────────────────────────
 
 _SKILL_CATEGORIES = [
@@ -426,17 +495,26 @@ def _render_boot_anim(R, console, lines):
 # ── Figlet animation ──────────────────────────────────────────────────────
 
 def _render_figlet_anim(R, console):
+    """Combined animation: DNA crown scrolls (1 pair/2 frames) above
+    the figlet banner reveal (column-sweep scramble-to-lock)."""
     Live = R["Live"]
     Align = R["Align"]
+    Group = R["Group"]
+    Text = R["Text"]
     rng = random.Random(0xB1053)
 
-    frames = 28
-    with Live(Align.center(_figlet_banner(R, 0.0, rng)),
-              console=console, refresh_per_second=24,
-              transient=False) as live:
+    frames = 32
+
+    def frame_view(f: int):
+        dna = _dna_crown(R, scroll_offset=f // 2)
+        progress = min(1.0, f / (frames - 4))  # figlet locks ~4 frames early
+        banner = Align.center(_figlet_banner(R, progress, rng))
+        return Group(dna, Text(""), banner)
+
+    with Live(frame_view(0), console=console,
+              refresh_per_second=24, transient=False) as live:
         for f in range(frames + 1):
-            progress = min(1.0, f / frames)
-            live.update(Align.center(_figlet_banner(R, progress, rng)))
+            live.update(frame_view(f))
             time.sleep(1 / 24)
 
 
@@ -475,6 +553,8 @@ def render(
             _render_figlet_anim(R, console)
         else:
             rng = random.Random(0xB1053)
+            console.print(_dna_crown(R, scroll_offset=0))
+            console.print()
             console.print(Align.center(_figlet_banner(R, 1.0, rng)))
         console.print()
         console.print(_subtitle(R, version, install_mode))
