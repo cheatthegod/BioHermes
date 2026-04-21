@@ -52,7 +52,11 @@ skills:
     - <biohermes-skills-dir>
 
 display:
-  compact: false
+  # compact: true — shrinks Hermes's own welcome banner to a tiny status
+  # line.  Combined with our pre-launch splash (biohermes/splash.py),
+  # this means the user mostly sees the BioHermes-branded splash and
+  # only a minimal Hermes status row underneath.
+  compact: true
   tool_progress: all
   streaming: true
   # BioHermes-themed skin — installed by `biohermes/cli.py` to

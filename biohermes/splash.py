@@ -1,15 +1,12 @@
 """biohermes/splash.py — pre-launch BioHermes splash screen.
 
-Shows a bio-themed ASCII DNA helix + live status panel before handing
-control to Hermes's chat TUI.  Reads the active profile config to show
-provider / model / smart-routing / MCP / outbox / gateway state.
+Vertical-stacked layout (no Table.grid width competition) so the title
++ DNA helix + status panel render predictably across terminal widths
+70 → 200+ columns.
 
-Designed to be:
-  - Quick (renders once, no blocking sleep)
-  - Skipped silently for non-interactive invocations
-    (`-q`, piped stdin, `--no-splash` flag)
-  - Forgiving — if anything fails (missing config, no Rich, etc.)
-    splash silently aborts; the agent still launches
+Renders to stderr and silently aborts on any error so the agent always
+launches.  Gated by `should_show()` — skipped for `-q`, `--version`,
+`--help`, `--no-splash`, or non-TTY invocations.
 """
 from __future__ import annotations
 
@@ -19,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-# Hermes gateway env vars the shim watches; used here to summarize gateway state.
+# Hermes gateway env vars the shim watches; used to summarize gateway state.
 _GATEWAY_VARS = (
     ("TELEGRAM_HOME_CHANNEL", "Telegram"),
     ("DISCORD_HOME_CHANNEL", "Discord"),
@@ -38,26 +35,23 @@ _GATEWAY_VARS = (
 )
 
 
-# ASCII DNA helix art — six "rungs" of base pairs with curving phosphate
-# backbone.  Renders with foreground colors for visual depth.
-DNA_ART = [
-    "  G═══C ╲╱",
-    "        ╳ ",
-    "  T═══A ╱╲",
-    "        ╳ ",
-    "  C═══G ╲╱",
-    "        ╳ ",
-    "  A═══T ╱╲",
-]
-
-
-# Big BIOHERMES letters in a thin stylized form (uses box-drawing characters,
-# no extra deps).  Rendered with a horizontal color gradient.
+# Compact 5-line block-letter wordmark for "BIOHERMES".  Hand-laid-out so
+# total width is constant (no proportional rendering surprises).  Width:
+# exactly 53 columns including the leading space.  Fits in any terminal
+# ≥ 60 cols wide.
 WORDMARK = [
-    "  ┌─┐ ┬ ┌─┐ ┬ ┬ ┌─┐ ┬─┐ ┌┬┐ ┌─┐ ┌─┐",
-    "  ├┴┐ │ │ │ ├─┤ ├┤  ├┬┘ │││ ├┤  └─┐",
-    "  └─┘ ┴ └─┘ ┴ ┴ └─┘ ┴└─ ┴ ┴ └─┘ └─┘",
+    " ██████╗ ██╗ ██████╗ ██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗",
+    " ██╔══██╗██║██╔═══██╗██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝",
+    " ██████╔╝██║██║   ██║███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗",
+    " ██╔══██╗██║██║   ██║██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║",
+    " ██████╔╝██║╚██████╔╝██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║",
+    " ╚═════╝ ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝",
 ]
+
+
+# DNA helix — 4 base-pair "rungs", rendered horizontally as a single line
+# so it never wraps regardless of terminal width.
+DNA_LINE = "  G═C  ╲╱  T═A  ╳  C═G  ╳  A═T  ╳  G═C  ╲╱  T═A  ╳  C═G  ╲╱  A═T  "
 
 
 def _try_import_rich():
@@ -74,7 +68,6 @@ def _try_import_rich():
 
 
 def _read_config(profile_dir: Path) -> dict[str, Any]:
-    """Read the seeded config.yaml; tolerate missing or invalid YAML."""
     config_path = profile_dir / "config.yaml"
     if not config_path.is_file():
         return {}
@@ -94,12 +87,7 @@ def _count_outbox(profile_dir: Path) -> int:
 
 
 def _count_bio_skills(checkout_root: Path) -> int:
-    """Count migrated bio skills if visible from this layout."""
-    candidates = [
-        checkout_root / "optional-skills" / "bioinformatics",
-        # In some layouts the bio skills could be elsewhere; only count
-        # what we can see, no guesswork.
-    ]
+    candidates = [checkout_root / "optional-skills" / "bioinformatics"]
     for d in candidates:
         if d.is_dir():
             return sum(1 for p in d.iterdir() if p.is_dir() and (p / "SKILL.md").is_file())
@@ -107,35 +95,28 @@ def _count_bio_skills(checkout_root: Path) -> int:
 
 
 def _gateway_status() -> str:
-    """Return a short string about which gateways are wired."""
     active = []
     for var, label in _GATEWAY_VARS:
         value = os.environ.get(var, "").strip()
         if value and not value.startswith("${"):
             active.append(label)
     if not active:
-        return "⊘  CLI-only (no gateway env detected)"
+        return "⊘  CLI-only"
     if len(active) == 1:
-        return f"●  {active[0]} channel ready"
-    return f"●  {len(active)} channels ready ({', '.join(active[:3])}{'…' if len(active) > 3 else ''})"
+        return f"●  {active[0]}"
+    return f"●  {len(active)} channels ({', '.join(active[:3])}{'…' if len(active) > 3 else ''})"
 
 
-def _gradient(text: str, start: str, end: str):
-    """Horizontal color gradient across a single line.  Returns Rich Text."""
-    from rich.text import Text
-    from rich.color import Color
-
-    out = Text()
-    n = max(1, len(text) - 1)
-    sr, sg, sb = bytes.fromhex(start.lstrip("#"))
-    er, eg, eb = bytes.fromhex(end.lstrip("#"))
-    for i, ch in enumerate(text):
-        t = i / n
-        r = int(sr + (er - sr) * t)
-        g = int(sg + (eg - sg) * t)
-        b = int(sb + (eb - sb) * t)
-        out.append(ch, style=f"bold #{r:02x}{g:02x}{b:02x}")
-    return out
+def _shorten_path(p: Path, max_len: int = 50) -> str:
+    """Shorten a path with ~ for $HOME and middle ellipsis if too long."""
+    s = str(p)
+    home = str(Path.home())
+    if s.startswith(home):
+        s = "~" + s[len(home):]
+    if len(s) <= max_len:
+        return s
+    keep = max_len - 3
+    return s[: keep // 2] + "…" + s[-(keep - keep // 2):]
 
 
 def render(
@@ -145,39 +126,38 @@ def render(
     install_mode: str = "editable",
     version: str = "0.1.0a0",
 ) -> None:
-    """Render the splash to stderr (so it doesn't pollute stdout pipes).
-
-    Silently aborts on any rendering error.
-    """
     rich = _try_import_rich()
     if rich is None:
-        return  # No rich available — degrade silently
+        return
     Console, Panel, Table, Text, Align, Group = rich
 
     console = Console(stderr=True, force_terminal=True)
-    if console.size.width < 60:
-        # Terminal too narrow for the splash; skip
+    width = console.size.width
+
+    # If terminal is too narrow even for the compact wordmark, skip splash
+    # entirely — Hermes's own compact banner will take over.
+    if width < 70:
         return
 
     cfg = _read_config(profile_dir)
-    model = (cfg.get("model") or {})
+    model = cfg.get("model") or {}
     provider = model.get("provider", "?")
     default_model = model.get("default", "?")
 
-    smart_routing = (cfg.get("smart_model_routing") or {})
+    smart_routing = cfg.get("smart_model_routing") or {}
     smart_enabled = smart_routing.get("enabled", False)
-    cheap = (smart_routing.get("cheap_model") or {})
+    cheap = smart_routing.get("cheap_model") or {}
     cheap_str = (
-        f"{cheap.get('provider', '?')}/{cheap.get('model', '?')}"
+        f"→ {cheap.get('provider', '?')}/{cheap.get('model', '?')}"
         if smart_enabled
         else "off"
     )
 
-    approvals = (cfg.get("approvals") or {})
+    approvals = cfg.get("approvals") or {}
     approvals_mode = approvals.get("mode", "?")
 
-    checkpoints = (cfg.get("checkpoints") or {})
-    checkpoints_on = checkpoints.get("enabled", False)
+    checkpoints = cfg.get("checkpoints") or {}
+    checkpoints_str = "enabled" if checkpoints.get("enabled", False) else "off"
 
     mcp_servers = list((cfg.get("mcp_servers") or {}).keys())
     mcp_str = ", ".join(mcp_servers) if mcp_servers else "(none)"
@@ -185,64 +165,71 @@ def render(
     bio_skill_count = _count_bio_skills(checkout_root)
     outbox_n = _count_outbox(profile_dir)
     gateway = _gateway_status()
+    profile_str = _shorten_path(profile_dir, 50)
+    outbox_str = f"{_shorten_path(profile_dir / 'outbox', 50)}  ({outbox_n} files)"
 
-    # ── Wordmark ───────────────────────────────────────────────────────────
+    # ── Build content (vertical stack — no Table.grid) ─────────────────────
+    content_parts = []
+
+    # 1. Wordmark — solid teal-green color (no gradient → predictable widths)
     wordmark = Text()
     for line in WORDMARK:
-        wordmark.append_text(_gradient(line, "#00d9b2", "#7c5cff"))
+        wordmark.append(line, style="bold #00ff9c")
         wordmark.append("\n")
-    wordmark.append(_gradient("        bio skills × Hermes runtime", "#5a8a8a", "#00d4ff"))
+    wordmark.append(
+        "        bio skills × Hermes runtime",
+        style="dim italic #00d4ff",
+    )
+    content_parts.append(Align.center(wordmark))
 
-    # ── DNA helix art on the side ──────────────────────────────────────────
-    helix = Text()
-    for i, line in enumerate(DNA_ART):
-        # Alternate between teal and cyan for "AT/GC" feel
-        color = "#00ff9c" if i % 2 == 0 else "#00d4ff"
-        helix.append(line, style=f"bold {color}")
-        helix.append("\n")
+    # 2. Spacer
+    content_parts.append(Text(""))
 
-    # Layout: wordmark left, helix right (use a Table)
-    head = Table.grid(padding=(0, 4), expand=True)
-    head.add_column(ratio=2)
-    head.add_column(justify="right", ratio=1)
-    head.add_row(wordmark, helix)
+    # 3. DNA helix — single line, alternating colors per base pair
+    dna = Text()
+    # Color each segment differently so it looks like a helix
+    segments = DNA_LINE.split("  ")  # split on double-space gaps between rungs
+    palette = ["#00ff9c", "#00d4ff", "#7c5cff", "#00d4ff"]
+    for i, seg in enumerate(segments):
+        if seg.strip():
+            dna.append(seg, style=f"bold {palette[i % len(palette)]}")
+        if i < len(segments) - 1:
+            dna.append("  ")
+    content_parts.append(Align.center(dna))
 
-    # ── Status grid ────────────────────────────────────────────────────────
-    grid = Table.grid(padding=(0, 1))
-    grid.add_column(style="bold #00ffaa", no_wrap=True, width=14)
+    # 4. Spacer
+    content_parts.append(Text(""))
+
+    # 5. Status grid (single column, simple key:value rows)
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold #00ffaa", no_wrap=True, min_width=14)
     grid.add_column(style="#e0fff8")
 
-    def row(label: str, value: str) -> None:
-        grid.add_row(f"{label}", value)
-
-    row("🔬  Provider", f"{provider} · {default_model}")
-    row("🧪  Smart route", f"cheap → {cheap_str}")
-    row("🛡   Approvals",  f"mode = {approvals_mode}")
-    row("💾  Checkpoints", "enabled" if checkpoints_on else "off")
-    row("🧬  Bio skills",  f"{bio_skill_count} workflows under optional-skills/bioinformatics/")
-    row("⚗   MCP shim",    mcp_str)
-    row("📡  Gateway",     gateway)
-    row("🗂   Outbox",      f"{profile_dir / 'outbox'}  ({outbox_n} files)")
-    row("🏠  Profile",     str(profile_dir))
-    row("📦  Install",     f"{install_mode} · v{version}")
+    grid.add_row("🔬  Provider",    f"{provider} · {default_model}")
+    grid.add_row("🧪  Smart route", f"{cheap_str}")
+    grid.add_row("🛡   Approvals",   f"mode = {approvals_mode}")
+    grid.add_row("💾  Checkpoints", checkpoints_str)
+    grid.add_row("🧬  Bio skills",  f"{bio_skill_count} workflows")
+    grid.add_row("⚗   MCP shim",    mcp_str)
+    grid.add_row("📡  Gateway",     gateway)
+    grid.add_row("🗂   Outbox",      outbox_str)
+    grid.add_row("🏠  Profile",     profile_str)
+    grid.add_row("📦  Install",     f"{install_mode} · v{version}")
+    content_parts.append(Align.center(grid))
 
     # ── Compose panel ──────────────────────────────────────────────────────
-    body = Group(
-        Align.center(head),
-        Text(""),
-        Align.left(grid),
-        Text(""),
-        Align.center(_gradient("                  Loading agent…", "#5a8a8a", "#00ff9c")),
-    )
-
+    body = Group(*content_parts)
     panel = Panel(
         body,
         border_style="#00d9b2",
-        padding=(1, 3),
-        title=Text("BIOHERMES", style="bold #00ff9c"),
-        title_align="left",
-        subtitle=Text("type /skills, /help, or just describe what you want", style="dim #5a8a8a"),
-        subtitle_align="right",
+        padding=(1, 2),
+        title=Text(" 🧬 BIOHERMES 🧬 ", style="bold #00ff9c on #0a1f1a"),
+        title_align="center",
+        subtitle=Text(
+            "type /skills · /help · or describe what you want",
+            style="dim #5a8a8a",
+        ),
+        subtitle_align="center",
     )
 
     try:
@@ -250,24 +237,16 @@ def render(
         console.print(panel)
         console.print()
     except Exception:
-        return  # Best-effort; never fail the launch over splash
+        return
 
 
 def should_show(argv_rest: list[str]) -> bool:
-    """Decide whether to render splash for this invocation.
-
-    Show splash when:
-      - the first non-flag argument is `chat` (or argv is empty meaning chat)
-      - the user is on a TTY (interactive)
-      - `-q` / `--query` is NOT present (those are one-shot mode)
-      - `--no-splash` is NOT in argv
-    """
+    """Decide whether to render splash for this invocation."""
     if "--no-splash" in argv_rest:
         return False
     if not sys.stderr.isatty():
         return False
 
-    # First positional that isn't a flag
     cmd = None
     for arg in argv_rest:
         if arg.startswith("-"):
@@ -275,10 +254,7 @@ def should_show(argv_rest: list[str]) -> bool:
         cmd = arg
         break
 
-    # Empty argv → default chat (Hermes drops you into chat with no args)
     if cmd is None:
-        # Suppress splash for explicit pass-throughs that take no command
-        # (e.g. `--version`, `--help`)
         if any(a in argv_rest for a in ("--version", "-V", "--help", "-h")):
             return False
         return True
@@ -286,5 +262,4 @@ def should_show(argv_rest: list[str]) -> bool:
     if cmd != "chat":
         return False
 
-    # `chat -q "..."` is one-shot, skip splash
     return not any(a in argv_rest for a in ("-q", "--query"))

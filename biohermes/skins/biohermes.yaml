@@ -95,3 +95,43 @@ branding:
 
 # Tool output prefix — heavier vertical for bio "lab notebook" feel
 tool_prefix: "┃"
+
+# ── Banner overrides ───────────────────────────────────────────────────────
+# Hermes's skin engine (hermes_cli/banner.py:369, :532) reads these to
+# replace its default HERMES_AGENT_LOGO + HERMES_CADUCEUS ASCII art.
+# Setting them swaps the Hermes wordmark + caduceus symbol with our own
+# BioHermes branding inside the welcome banner.
+
+# Replaces HERMES_AGENT_LOGO.  Kept compact (single decorative strip)
+# because the pre-launch splash already carries the big BIOHERMES wordmark
+# — no need to duplicate the brand.
+banner_logo: |
+  [bold #00ff9c]═══════════════════════════════════════════════════════════════════════════════[/]
+  [bold #00ff9c]   🧬   [bold #00d4ff]B I O H E R M E S[/]   [bold #7c5cff]·[/]   [dim #00d4ff]bio skills × Hermes runtime[/]   🔬[/]
+  [bold #00ff9c]═══════════════════════════════════════════════════════════════════════════════[/]
+
+# Replaces HERMES_CADUCEUS (the skull/caduceus side panel symbol).  A
+# stylised DNA double helix in BioHermes colors.
+banner_hero: |
+  [#00ff9c]                              [/]
+  [#00ff9c]       G ═══════ C            [/]
+  [#00d4ff]        ╲       ╱             [/]
+  [#00d4ff]         ╲     ╱              [/]
+  [#7c5cff]          ╲   ╱               [/]
+  [#7c5cff]           ╲ ╱                [/]
+  [#7c5cff]            ╳                 [/]
+  [#7c5cff]           ╱ ╲                [/]
+  [#7c5cff]          ╱   ╲               [/]
+  [#00d4ff]         ╱     ╲              [/]
+  [#00d4ff]        ╱       ╲             [/]
+  [#00ff9c]       T ═══════ A            [/]
+  [#00ff9c]        ╲       ╱             [/]
+  [#00d4ff]         ╲     ╱              [/]
+  [#7c5cff]          ╲   ╱               [/]
+  [#7c5cff]           ╲ ╱                [/]
+  [#7c5cff]            ╳                 [/]
+  [#7c5cff]           ╱ ╲                [/]
+  [#7c5cff]          ╱   ╲               [/]
+  [#00d4ff]         ╱     ╲              [/]
+  [#00d4ff]        ╱       ╲             [/]
+  [#00ff9c]       C ═══════ G            [/]
