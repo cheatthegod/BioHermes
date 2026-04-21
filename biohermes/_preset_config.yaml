@@ -55,6 +55,10 @@ display:
   compact: false
   tool_progress: all
   streaming: true
+  # BioHermes-themed skin — installed by `biohermes/cli.py` to
+  # <HERMES_HOME>/skins/biohermes.yaml on first launch.  Sets bio
+  # color palette + DNA spinner + 🧬 BioHermes branding inside chat.
+  skin: biohermes
 
 # Tier B (plan v10 §9.2)
 smart_model_routing:

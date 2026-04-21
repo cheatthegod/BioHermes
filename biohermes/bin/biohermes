@@ -1,87 +1,38 @@
 #!/usr/bin/env bash
-# biohermes — launch Hermes against a BioHermes-scoped profile dir.
+# biohermes — checkout-local launcher.
 #
-# The Python console script `biohermes` (biohermes.cli:main) is the
-# canonical entry point once the package is `pip install`-ed.  This bash
-# wrapper is here for people working directly inside a checkout before
-# install — it does the same seeding logic with the same three
-# placeholders.
+# Delegates all setup logic (config seed, skin install, splash, sibling-
+# hermes resolution, profile dir choice) to `biohermes/cli.py` so there is
+# a single source of truth.  Works without `pip install -e .` because we
+# add the repo root to PYTHONPATH and invoke the cli module directly.
 #
-# Preset placeholders substituted at first launch:
-#   <biohermes-mcp-shim>       absolute path to mcp_bioclaw_server.py
-#   <biohermes-outbox>         absolute path to <profile>/outbox/
-#   <biohermes-skills-dir>     absolute path to bundled bio skills
-#                              (dropped from the config when that dir
-#                              does not exist — e.g. wheel installs)
+# After `pip install` the equivalent entry point is the `biohermes`
+# console_script registered in pyproject.toml.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PRESET_PATH="$REPO_ROOT/config-examples/biohermes-cli-config.yaml"
-PROFILE_DIR="$REPO_ROOT/.biohermes-profile"
-SKILLS_DIR="$REPO_ROOT/optional-skills/bioinformatics"
-MCP_SHIM="$SCRIPT_DIR/../mcp_bioclaw_server.py"
-OUTBOX_DIR="$PROFILE_DIR/outbox"
 
-if [[ ! -f "$PRESET_PATH" ]]; then
-  echo "biohermes: expected BioHermes config preset at $PRESET_PATH" >&2
-  echo "biohermes: is this script running from inside a BioHermes checkout?" >&2
-  exit 1
-fi
-
-# Prefer a sibling hermes (installed alongside biohermes in the same
-# venv / prefix); fall back to PATH; honor HERMES_BIN override.
-if [[ -z "${HERMES_BIN:-}" ]]; then
-  SCRIPT_PARENT="$(dirname "$SCRIPT_DIR")"
-  if [[ -x "$SCRIPT_PARENT/../bin/hermes" ]]; then
-    HERMES_BIN="$SCRIPT_PARENT/../bin/hermes"
+# Find a Python with the right deps. Prefer:
+#   1. Caller's PYTHON env var
+#   2. Sibling python in same prefix as `hermes` (matches our hermes install)
+#   3. Generic python3 on PATH
+PYTHON="${PYTHON:-}"
+if [[ -z "$PYTHON" ]]; then
+  if [[ -n "${HERMES_BIN:-}" && -x "$(dirname "$HERMES_BIN")/python" ]]; then
+    PYTHON="$(dirname "$HERMES_BIN")/python"
   else
-    HERMES_BIN="$(command -v hermes || true)"
+    HBIN="$(command -v hermes 2>/dev/null || true)"
+    if [[ -n "$HBIN" && -x "$(dirname "$HBIN")/python" ]]; then
+      PYTHON="$(dirname "$HBIN")/python"
+    else
+      PYTHON="$(command -v python3)"
+    fi
   fi
 fi
-if [[ -z "$HERMES_BIN" ]]; then
-  echo "biohermes: \`hermes\` not found on PATH; set HERMES_BIN to override." >&2
-  exit 1
-fi
 
-mkdir -p "$PROFILE_DIR"
+# Add the repo root to PYTHONPATH so `biohermes` package is importable
+# even before `pip install -e .`.
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
-FORCE_RESEED=0
-if [[ "${1:-}" == "--reseed-biohermes" ]]; then
-  FORCE_RESEED=1
-  shift
-fi
-
-_seed_config() {
-  local out="$1"
-  if [[ -d "$SKILLS_DIR" ]]; then
-    sed \
-      -e "s|<biohermes-mcp-shim>|$MCP_SHIM|g" \
-      -e "s|<biohermes-outbox>|$OUTBOX_DIR|g" \
-      -e "s|<biohermes-skills-dir>|$SKILLS_DIR|g" \
-      "$PRESET_PATH" > "$out"
-  else
-    # Strip external_dirs line pointing at missing skills dir.
-    sed \
-      -e "s|<biohermes-mcp-shim>|$MCP_SHIM|g" \
-      -e "s|<biohermes-outbox>|$OUTBOX_DIR|g" \
-      "$PRESET_PATH" \
-      | sed -E '/^[[:space:]]+external_dirs:/{N;/- <biohermes-skills-dir>/d}' \
-      > "$out"
-  fi
-}
-
-CONFIG_TARGET="$PROFILE_DIR/config.yaml"
-if [[ ! -f "$CONFIG_TARGET" ]]; then
-  _seed_config "$CONFIG_TARGET"
-elif [[ "$FORCE_RESEED" -eq 1 ]]; then
-  backup="$CONFIG_TARGET.bak-$(date +%s)"
-  mv "$CONFIG_TARGET" "$backup"
-  _seed_config "$CONFIG_TARGET"
-  echo "biohermes: backed up existing config to $backup; reseeded from preset." >&2
-fi
-
-export BIOHERMES_REPO="$REPO_ROOT"
-export HERMES_HOME="$PROFILE_DIR"
-
-exec "$HERMES_BIN" "$@"
+exec "$PYTHON" -m biohermes.cli "$@"

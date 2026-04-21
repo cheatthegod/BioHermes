@@ -140,6 +140,22 @@ def _ensure_seeded(layout: dict, *, force: bool) -> bool:
     return True
 
 
+def _ensure_skin_installed(layout: dict, *, force: bool = False) -> None:
+    """Install the BioHermes skin into <HERMES_HOME>/skins/ so Hermes can
+    load it.  Same first-launch-only policy as the preset config:
+    do not overwrite a user-edited skin without `force`.
+    """
+    package_skin = _package_dir() / "skins" / "biohermes.yaml"
+    if not package_skin.is_file():
+        return  # skin missing from package — silently skip
+    skins_dir = layout["profile_dir"] / "skins"
+    target = skins_dir / "biohermes.yaml"
+    if target.is_file() and not force:
+        return
+    skins_dir.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(package_skin.read_bytes())
+
+
 def _find_hermes_bin() -> str:
     """Prefer the `hermes` binary that belongs to this Python prefix —
     in a venv `sys.prefix/bin/hermes` is the one that matches this
@@ -180,8 +196,25 @@ def main() -> int:
                 f"biohermes: reseeded {layout['profile_dir']}/config.yaml from preset.\n"
             )
 
+    # Install BioHermes skin into <HERMES_HOME>/skins/ so Hermes loads it.
+    # First-launch only by default; --reseed-biohermes refreshes it too.
+    _ensure_skin_installed(layout, force=force_reseed)
+
     os.environ["BIOHERMES_REPO"] = str(layout["profile_dir"].parent)
     os.environ["HERMES_HOME"] = str(layout["profile_dir"])
+
+    # Splash screen: only for interactive chat (TTY + no -q).
+    # Failures are silent — agent always launches.
+    try:
+        from biohermes import splash as _splash
+        if _splash.should_show(argv_rest):
+            _splash.render(
+                profile_dir=layout["profile_dir"],
+                checkout_root=_package_dir().parent,
+                install_mode=("editable" if layout["skills_dir"] else "wheel"),
+            )
+    except Exception:
+        pass
 
     hermes_bin = _find_hermes_bin()
     os.execv(hermes_bin, [hermes_bin, *argv_rest])

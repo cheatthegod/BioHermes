@@ -1,0 +1,97 @@
+# ============================================================================
+# BioHermes — bio-themed Hermes skin
+# ============================================================================
+# Activated by `display.skin: biohermes` in config.  cli.py copies this file
+# to <HERMES_HOME>/skins/biohermes.yaml on first launch.
+#
+# Visual language:
+#   Palette  → deep ocean cyan + neon DNA green + magenta accents
+#   Spinner  → 🧬 🔬 🧪 ⚗ 🦠 🧫
+#   Verbs    → bio research lexicon (sequencing, splicing, BLASTing, …)
+#   Brand    → 🧬 BioHermes everywhere instead of ⚕ Hermes
+# ============================================================================
+
+name: biohermes
+description: BioHermes — bio-themed neon palette for bioinformatics agent work
+
+colors:
+  # Banner panel — the splash + about box
+  banner_border: "#00d9b2"        # bright teal-green (DNA chain)
+  banner_title: "#00ff9c"         # neon mint
+  banner_accent: "#00d4ff"        # cyan accent (AlphaFold-ish)
+  banner_dim: "#5a8a8a"           # muted teal
+  banner_text: "#e0fff8"          # pale frost text
+
+  # UI elements
+  ui_accent: "#00ffaa"            # general bio accent
+  ui_label: "#7c5cff"             # purple labels (RNA-ish)
+  ui_ok: "#42e695"                # success green
+  ui_error: "#ff5e6c"             # error pink/red
+  ui_warn: "#ffb142"              # warning amber
+
+  # Input area
+  prompt: "#e0fff8"               # prompt text
+  input_rule: "#00d9b2"           # rule around input box
+
+  # Response box (the agent's reply panel)
+  response_border: "#00d4ff"      # cyan border
+
+  # Session display
+  session_label: "#00ff9c"        # neon mint
+  session_border: "#5a8a8a"       # muted teal
+
+  # TUI surfaces (status bar, completion menu, etc.)
+  status_bar_bg: "#0a1f1a"                  # very deep ocean
+  voice_status_bg: "#0a1f1a"
+  completion_menu_bg: "#0a1f1a"
+  completion_menu_current_bg: "#1a3d33"     # active row, slightly lifted
+  completion_menu_meta_bg: "#0a1f1a"
+  completion_menu_meta_current_bg: "#1a3d33"
+
+spinner:
+  # Bio-themed faces while waiting for LLM response
+  waiting_faces:
+    - "(🧬)"
+    - "(🔬)"
+    - "(🧪)"
+    - "(⚗)"
+    - "(🧫)"
+    - "(🦠)"
+
+  # Faces during extended thinking
+  thinking_faces:
+    - "(🧬)"
+    - "(🔬)"
+    - "(🧠)"
+    - "(🧪)"
+    - "(💡)"
+
+  # Bio research verbs
+  thinking_verbs:
+    - "sequencing"
+    - "splicing"
+    - "annotating"
+    - "BLASTing"
+    - "folding"
+    - "translating"
+    - "assembling"
+    - "screening"
+    - "aligning"
+    - "extracting"
+
+  # Decorations around spinner: DNA-helix-like brackets
+  wings:
+    - ["⟪🧬", "🧬⟫"]
+    - ["⟪🔬", "🔬⟫"]
+    - ["⟪🧪", "🧪⟫"]
+
+branding:
+  agent_name: "BioHermes"
+  welcome: "🧬 BioHermes ready — bio skills × Hermes runtime. Type /skills to see 40 bioinformatics workflows, or just describe what you want to do."
+  goodbye: "🧬 Session closed."
+  response_label: " 🧬 BioHermes "
+  prompt_symbol: "🧬 ❯ "
+  help_header: "🔬 BioHermes Commands"
+
+# Tool output prefix — heavier vertical for bio "lab notebook" feel
+tool_prefix: "┃"
