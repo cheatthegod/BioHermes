@@ -1,24 +1,39 @@
-"""biohermes/splash.py — neofetch-style splash screen with animated status.
+"""biohermes/splash.py — neofetch-style splash with glitch reveal,
+activity sparkline, and skill-category bar chart.
 
-Inspired by neofetch / fastfetch / starship — compact 2-column layout
-with an iconic DNA helix on the left and a dense status grid on the
-right.  Each status row "checks in" one at a time (~60ms per row) so
-the splash feels alive instead of static.
+Visual inspiration drawn from popular cool-terminal projects:
+  - neofetch / fastfetch / hyfetch — 2-column logo + info
+  - btop / bpytop — sparklines, gauges, dense meters
+  - cmatrix / Mr. Robot aesthetic — glitch character cycling
+  - lazygit / k9s — multi-pane dashboards
+  - starship / powerlevel10k — segmented prompts with colored separators
+  - gum / glow (charmbracelet) — elegant panels with consistent styling
 
-Reads profile config for provider / smart-routing / MCP / gateway /
-outbox state.  Renders to stderr.  All errors caught silently so the
-agent always launches.
+Layout:
+  - Title (glitch-revealed): BIOHERMES wordmark cycles random chars
+    into place over ~500ms
+  - Left column: gradient vertical DNA helix
+  - Right column: status rows with ● reveal animation
+  - Below panel: activity sparkline (last 14 days of sessions)
+    + skill category distribution with inline bar chart
+
+Env:
+  BIOHERMES_NO_ANIMATION=1 → skip animations, render static
+  BIOHERMES_NO_SPARKLINE=1 → skip the activity sparkline block
 """
 from __future__ import annotations
 
 import os
+import random
+import re
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 
-# Gateway env vars the bio shim watches; used for "● Gateway" status.
+# ── Gateway env vars ───────────────────────────────────────────────────────
 _GATEWAY_VARS = (
     ("TELEGRAM_HOME_CHANNEL", "Telegram"),
     ("DISCORD_HOME_CHANNEL", "Discord"),
@@ -36,10 +51,9 @@ _GATEWAY_VARS = (
     ("EMAIL_HOME_CHANNEL", "Email"),
 )
 
+# ── Visual assets ──────────────────────────────────────────────────────────
 
-# Vertical DNA double helix — 11 rows, 7 cols wide.  Base pair rungs
-# alternate AT and GC; phosphate backbone curves ╲ ╱ ╳ ╱ ╲.  Carefully
-# hand-laid so backbone diagonals meet at the ╳ crossover.
+# Vertical DNA double helix, 11 rows × 11 cols
 DNA_HELIX = [
     "   A═══T   ",
     "    ╲ ╱    ",
@@ -54,12 +68,61 @@ DNA_HELIX = [
     "     ╳     ",
 ]
 
-# Rainbow-ish gradient down the helix (teal → green → cyan → purple → teal).
+# Gradient colors walking down the helix: teal → green → cyan → purple → teal
 _HELIX_PALETTE = [
     "#00d9b2", "#00d9b2", "#00ffaa", "#00ff9c", "#00ff9c",
     "#00d4ff", "#7c5cff", "#7c5cff", "#00d4ff", "#00d9b2", "#00d9b2",
 ]
 
+# Compact inline BIOHERMES title — 1 line, small footprint
+_TITLE = "BIOHERMES"
+
+# Characters the glitch animation cycles through before "locking in"
+_GLITCH_ALPHABET = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@$%&*+?!<>[]{}")
+
+# Sparkline block chars, 8 levels low → high
+_SPARK_BLOCKS = "▁▂▃▄▅▆▇█"
+
+# Bar chart block chars, 9 levels (includes full + space)
+_BAR_BLOCKS = " ▏▎▍▌▋▊▉█"
+
+
+# ── Skill classifier → category counts (cheap static categorization) ───────
+
+# Prefix / contains substring → category.  Matches the 6 categories in
+# README.  Order matters for overlap (manuscript checked before bio-*).
+_SKILL_CATEGORIES = [
+    ("manuscript", "bio-manuscript"),
+    ("manuscript", "report-template"),
+    ("manuscript", "bio-figure-design"),
+    ("manuscript", "bio-ppt-generate"),
+    ("sequence db", "query-"),
+    ("sequence db", "pubmed"),
+    ("genomics",   "atac-seq"),
+    ("genomics",   "chip-seq"),
+    ("genomics",   "scrna"),
+    ("genomics",   "cell-annotation"),
+    ("genomics",   "differential-expression"),
+    ("genomics",   "metagenomics"),
+    ("genomics",   "sequence-analysis"),
+    ("genomics",   "blast-search"),
+    ("structural", "structural-biology"),
+    ("structural", "query-alphafold"),
+    ("proteomics", "proteomics"),
+    ("proteomics", "sec-report"),
+    ("proteomics", "sds-gel-review"),
+]
+
+
+def _classify(skill_name: str) -> str:
+    n = skill_name.lower()
+    for cat, needle in _SKILL_CATEGORIES:
+        if needle in n:
+            return cat
+    return "meta"
+
+
+# ── Rich import guard ──────────────────────────────────────────────────────
 
 def _try_import_rich():
     try:
@@ -68,16 +131,16 @@ def _try_import_rich():
         from rich.table import Table
         from rich.text import Text
         from rich.align import Align
-        from rich.columns import Columns
         from rich.live import Live
         return {
             "Console": Console, "Group": Group, "Panel": Panel,
-            "Table": Table, "Text": Text, "Align": Align,
-            "Columns": Columns, "Live": Live,
+            "Table": Table, "Text": Text, "Align": Align, "Live": Live,
         }
     except ImportError:
         return None
 
+
+# ── Data collection ───────────────────────────────────────────────────────
 
 def _read_config(profile_dir: Path) -> dict[str, Any]:
     config_path = profile_dir / "config.yaml"
@@ -98,11 +161,12 @@ def _count_outbox(profile_dir: Path) -> int:
     return sum(1 for p in outbox.iterdir() if p.is_file())
 
 
-def _count_bio_skills(checkout_root: Path) -> int:
+def _bio_skills(checkout_root: Path) -> list[str]:
     for d in [checkout_root / "optional-skills" / "bioinformatics"]:
         if d.is_dir():
-            return sum(1 for p in d.iterdir() if p.is_dir() and (p / "SKILL.md").is_file())
-    return 0
+            return [p.name for p in d.iterdir()
+                    if p.is_dir() and (p / "SKILL.md").is_file()]
+    return []
 
 
 def _active_gateways() -> list[str]:
@@ -124,21 +188,83 @@ def _shorten_path(p: Path, max_len: int = 42) -> str:
     return s[: max_len // 2 - 1] + "…" + s[-(max_len - max_len // 2):]
 
 
-# ── Status rows assembled from config ──────────────────────────────────────
+def _session_activity(profile_dir: Path, days: int = 14) -> list[int]:
+    """Count sessions per day for the last `days` days.  Reads session
+    JSON filenames (format: session_YYYYMMDD_HHMMSS_xxxxxx.json).
+    Returns a list length `days`, oldest first.
+    """
+    sessions_dir = profile_dir / "sessions"
+    counts = [0] * days
+    if not sessions_dir.is_dir():
+        return counts
+    today = datetime.now().date()
+    pat = re.compile(r"session_(\d{8})_")
+    for f in sessions_dir.iterdir():
+        m = pat.match(f.name)
+        if not m:
+            continue
+        try:
+            d = datetime.strptime(m.group(1), "%Y%m%d").date()
+        except ValueError:
+            continue
+        age = (today - d).days
+        if 0 <= age < days:
+            counts[days - 1 - age] += 1
+    return counts
 
-def _collect_status_rows(profile_dir: Path, checkout_root: Path) -> list[tuple[str, str]]:
+
+def _sparkline(values: list[int]) -> str:
+    if not values:
+        return ""
+    peak = max(values)
+    if peak == 0:
+        return _SPARK_BLOCKS[0] * len(values)
+    out = []
+    for v in values:
+        if v == 0:
+            out.append(" ")
+        else:
+            idx = min(len(_SPARK_BLOCKS) - 1, int(v / peak * (len(_SPARK_BLOCKS) - 1)))
+            out.append(_SPARK_BLOCKS[idx])
+    return "".join(out)
+
+
+def _skill_category_bars(skill_names: list[str]) -> list[tuple[str, int, str]]:
+    """Bucket bio skills into categories + render a tiny bar chart.
+    Returns list of (category, count, bar_string)."""
+    buckets: dict[str, int] = {}
+    for n in skill_names:
+        c = _classify(n)
+        buckets[c] = buckets.get(c, 0) + 1
+    if not buckets:
+        return []
+    total = sum(buckets.values())
+    order = ["sequence db", "genomics", "structural", "proteomics", "manuscript", "meta"]
+    out = []
+    for cat in order:
+        n = buckets.get(cat, 0)
+        if n == 0:
+            continue
+        # 12-column bar width; each column is 8 subpixel levels via _BAR_BLOCKS
+        sub = (n / total) * 12 * (len(_BAR_BLOCKS) - 1)
+        full = int(sub // (len(_BAR_BLOCKS) - 1))
+        rem = int(sub % (len(_BAR_BLOCKS) - 1))
+        bar = "█" * full + _BAR_BLOCKS[rem]
+        out.append((cat, n, bar))
+    return out
+
+
+# ── Status rows ────────────────────────────────────────────────────────────
+
+def _collect_status_rows(profile_dir: Path, skill_names: list[str]) -> list[tuple[str, str]]:
     cfg = _read_config(profile_dir)
-
-    # Runtime / provider
     model = cfg.get("model") or {}
-    provider = model.get("provider", "?")
-    default_model = model.get("default", "?")
-    # Shorten provider/model string if too long
-    prov_model = f"{provider} · {default_model}"
+    prov = model.get("provider", "?")
+    mdl = model.get("default", "?")
+    prov_model = f"{prov} · {mdl}"
     if len(prov_model) > 42:
         prov_model = prov_model[:41] + "…"
 
-    # Smart routing
     sr = cfg.get("smart_model_routing") or {}
     if sr.get("enabled"):
         cheap = sr.get("cheap_model") or {}
@@ -146,23 +272,18 @@ def _collect_status_rows(profile_dir: Path, checkout_root: Path) -> list[tuple[s
     else:
         smart = "off"
 
-    # Approvals
     ap = cfg.get("approvals") or {}
     approvals = ap.get("mode", "manual")
 
-    # Checkpoints
     cp = cfg.get("checkpoints") or {}
     ckpt = "enabled" if cp.get("enabled", False) else "off"
 
-    # Bio skills
-    bio_n = _count_bio_skills(checkout_root)
+    bio_n = len(skill_names)
     bio_str = f"{bio_n} workflows" if bio_n else "(not bundled)"
 
-    # MCP
     mcp_servers = list((cfg.get("mcp_servers") or {}).keys())
     mcp_str = ", ".join(mcp_servers) if mcp_servers else "(none)"
 
-    # Gateway
     gws = _active_gateways()
     if not gws:
         gw = "⊘ CLI-only"
@@ -171,12 +292,7 @@ def _collect_status_rows(profile_dir: Path, checkout_root: Path) -> list[tuple[s
     else:
         gw = f"● {len(gws)} channels"
 
-    # Outbox
     obn = _count_outbox(profile_dir)
-    outbox_str = f"{obn} files in outbox"
-
-    # Profile
-    prof = _shorten_path(profile_dir)
 
     return [
         ("Runtime",      "Hermes Agent · in-process"),
@@ -187,15 +303,14 @@ def _collect_status_rows(profile_dir: Path, checkout_root: Path) -> list[tuple[s
         ("Bio skills",   bio_str),
         ("MCP tools",    mcp_str),
         ("Gateway",      gw),
-        ("Profile",      prof),
-        ("Outbox",       outbox_str),
+        ("Profile",      _shorten_path(profile_dir)),
+        ("Outbox",       f"{obn} files"),
     ]
 
 
 # ── Rendering primitives ───────────────────────────────────────────────────
 
 def _colored_helix(R):
-    """Return a Rich Text of the DNA helix with gradient colors."""
     t = R["Text"]()
     for i, line in enumerate(DNA_HELIX):
         color = _HELIX_PALETTE[i % len(_HELIX_PALETTE)]
@@ -206,23 +321,15 @@ def _colored_helix(R):
 
 
 def _status_frame(R, rows: list[tuple[str, str]], revealed: int):
-    """Build a status grid where only `revealed` rows show values.
-
-    Unrevealed rows show a dim "checking…" placeholder with a spinner
-    dot; revealed rows show "●" indicator in bright green and the
-    real value.
-    """
     Table = R["Table"]
     Text = R["Text"]
     grid = Table.grid(padding=(0, 1))
-    grid.add_column(no_wrap=True, width=1)   # dot indicator
-    grid.add_column(no_wrap=True, width=12, style="bold #00d4ff")  # label
-    grid.add_column(overflow="ellipsis")     # value
+    grid.add_column(no_wrap=True, width=1)
+    grid.add_column(no_wrap=True, width=12, style="bold #00d4ff")
+    grid.add_column(overflow="ellipsis")
 
-    # Simple rotating spinner for unrevealed rows
     spinner_chars = "◐◓◑◒"
     phase = int(time.time() * 10) % len(spinner_chars)
-
     for i, (label, value) in enumerate(rows):
         if i < revealed:
             dot = Text("●", style="bold #00ff9c")
@@ -231,17 +338,30 @@ def _status_frame(R, rows: list[tuple[str, str]], revealed: int):
             dot = Text(spinner_chars[phase], style="dim #5a8a8a")
             val = Text("checking…", style="dim italic #5a8a8a")
         grid.add_row(dot, Text(label, style="bold #00d4ff"), val)
-
     return grid
 
 
-def _header_text(R, version: str, install_mode: str):
-    """Title for the outer panel."""
+def _glitch_title(R, locked_mask: list[bool], rng: random.Random) -> "object":
+    """Render BIOHERMES with unlocked chars showing random cycling glyphs."""
     Text = R["Text"]
     t = Text()
     t.append("  🧬  ", style="bold #00ff9c")
-    t.append("BIOHERMES ", style="bold #00ff9c")
-    t.append(f"v{version}", style="dim #00d4ff")
+    for i, ch in enumerate(_TITLE):
+        if locked_mask[i]:
+            t.append(ch, style="bold #00ff9c")
+        else:
+            # unlocked: pick a random glyph, flicker dim
+            g = rng.choice(_GLITCH_ALPHABET)
+            t.append(g, style="bold #5a8a8a")
+    return t
+
+
+def _full_title(R, version: str, install_mode: str):
+    Text = R["Text"]
+    t = Text()
+    t.append("  🧬  ", style="bold #00ff9c")
+    t.append(_TITLE, style="bold #00ff9c")
+    t.append(f"  v{version}", style="dim #00d4ff")
     t.append("  ·  ", style="dim #5a8a8a")
     t.append(install_mode, style="dim italic #5a8a8a")
     t.append("  ·  ", style="dim #5a8a8a")
@@ -249,7 +369,7 @@ def _header_text(R, version: str, install_mode: str):
     t.append("BioClaw", style="bold #7c5cff")
     t.append(" · powered by ", style="dim #5a8a8a")
     t.append("Hermes Agent", style="bold #00d4ff")
-    t.append("  ", style="")
+    t.append("  ")
     return t
 
 
@@ -265,15 +385,72 @@ def _footer_text(R):
     return t
 
 
-def _build_layout(R, helix, status_grid):
-    """Combine helix + status into a 2-column Table (neofetch-style)."""
-    Table = R["Table"]
+def _activity_block(R, activity: list[int]):
+    """Return a Text line with sparkline + stat summary."""
     Text = R["Text"]
+    spark = _sparkline(activity)
+    total = sum(activity)
+    t = Text()
+    t.append("  ", style="")
+    t.append("activity ", style="bold #00d4ff")
+    t.append("last 14 days  ", style="dim #5a8a8a")
+    t.append(spark, style="bold #00ff9c")
+    t.append(f"   {total} sessions", style="dim #00d4ff")
+    return t
+
+
+def _category_block(R, bars: list[tuple[str, int, str]]):
+    """Return a Group of per-category bar chart rows."""
+    Text = R["Text"]
+    Table = R["Table"]
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(no_wrap=True, width=12, style="bold #00d4ff")
+    grid.add_column(no_wrap=True, style="bold #7c5cff")   # count
+    grid.add_column(style="bold #00ffaa")                 # bar
+    for cat, n, bar in bars:
+        grid.add_row(
+            Text(cat, style="bold #00d4ff"),
+            Text(f"{n:>2}", style="bold #e0fff8"),
+            Text(bar, style="bold #00ffaa"),
+        )
+    return grid
+
+
+def _build_panel(R, revealed: int, title_widget, rows, activity, bars):
+    Table = R["Table"]
+    Group = R["Group"]
+    Panel = R["Panel"]
+    Text = R["Text"]
+
+    helix = _colored_helix(R)
+    status = _status_frame(R, rows, revealed)
     layout = Table.grid(padding=(0, 3))
-    layout.add_column(no_wrap=True)  # helix column (fixed width)
-    layout.add_column(ratio=1)       # status column (flex)
-    layout.add_row(helix, status_grid)
-    return layout
+    layout.add_column(no_wrap=True)
+    layout.add_column(ratio=1)
+    layout.add_row(helix, status)
+
+    body_parts = [Text(""), layout]
+    if activity is not None:
+        body_parts += [Text(""), _activity_block(R, activity)]
+    if bars:
+        body_parts += [
+            Text("  skill categories", style="bold #00d4ff"),
+            _category_block(R, bars),
+        ]
+    body_parts += [Text(""), _footer_text(R)]
+
+    return Panel(
+        Group(*body_parts),
+        border_style="#00d9b2",
+        padding=(0, 2),
+        title=title_widget,
+        title_align="left",
+        subtitle=Text(
+            "type /skills · /help · or describe your bio task",
+            style="dim italic #5a8a8a",
+        ),
+        subtitle_align="right",
+    )
 
 
 def render(
@@ -287,58 +464,63 @@ def render(
     if R is None:
         return
     Console = R["Console"]
-    Panel = R["Panel"]
-    Group = R["Group"]
     Live = R["Live"]
-    Text = R["Text"]
 
     console = Console(stderr=True, force_terminal=True)
-    width = console.size.width
-    if width < 70:
+    if console.size.width < 70:
         return
 
-    rows = _collect_status_rows(profile_dir, checkout_root)
+    skill_names = _bio_skills(checkout_root)
+    rows = _collect_status_rows(profile_dir, skill_names)
+    show_spark = os.environ.get("BIOHERMES_NO_SPARKLINE", "").strip() not in {"1", "true", "yes"}
+    activity = _session_activity(profile_dir) if show_spark else None
+    bars = _skill_category_bars(skill_names) if skill_names else []
 
-    def _panel_for(revealed: int):
-        helix = _colored_helix(R)
-        status = _status_frame(R, rows, revealed)
-        layout = _build_layout(R, helix, status)
-        body = Group(Text(""), layout, Text(""), _footer_text(R))
-        return Panel(
-            body,
-            border_style="#00d9b2",
-            padding=(0, 2),
-            title=_header_text(R, version, install_mode),
-            title_align="left",
-            subtitle=Text(
-                "type /skills · /help · or describe your bio task",
-                style="dim italic #5a8a8a",
-            ),
-            subtitle_align="right",
-        )
+    animate = os.environ.get("BIOHERMES_NO_ANIMATION", "").strip() not in {"1", "true", "yes"}
+    final_title = _full_title(R, version, install_mode)
 
     try:
         console.print()
-        animate = os.environ.get("BIOHERMES_NO_ANIMATION", "").strip() not in {"1", "true", "yes"}
         if animate:
+            rng = random.Random(42)  # deterministic glitch for nicer feel
+            # Glitch-reveal phase: title locks in char-by-char,
+            # status rows reveal in sync
+            locked = [False] * len(_TITLE)
+            n_title = len(_TITLE)
+            n_rows = len(rows)
+            # total frames: max(title_reveal_frames, rows_reveal_frames)
+            frames = max(n_title * 3, n_rows + 3)
             with Live(
-                _panel_for(0),
+                _build_panel(R, 0, _glitch_title(R, locked, rng), rows, activity, bars),
                 console=console,
-                refresh_per_second=20,
-                transient=False,  # keep the final state on screen
+                refresh_per_second=24,
+                transient=False,
             ) as live:
-                for i in range(len(rows) + 1):
-                    live.update(_panel_for(i))
-                    time.sleep(0.055)  # ~60ms per row
+                for f in range(frames):
+                    # Title: lock one more char every 3 frames
+                    if f % 3 == 0:
+                        # lock the leftmost unlocked slot
+                        for i in range(n_title):
+                            if not locked[i]:
+                                locked[i] = True
+                                break
+                    # Status rows: reveal one per frame
+                    revealed = min(n_rows, f + 1)
+                    # When all locked, use the full styled title
+                    if all(locked):
+                        title = final_title
+                    else:
+                        title = _glitch_title(R, locked, rng)
+                    live.update(_build_panel(R, revealed, title, rows, activity, bars))
+                    time.sleep(1 / 24)
         else:
-            console.print(_panel_for(len(rows)))
+            console.print(_build_panel(R, len(rows), final_title, rows, activity, bars))
         console.print()
     except Exception:
         return
 
 
 def should_show(argv_rest: list[str]) -> bool:
-    """Decide whether to render splash for this invocation."""
     if "--no-splash" in argv_rest:
         return False
     if not sys.stderr.isatty():
