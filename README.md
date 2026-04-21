@@ -1,3 +1,7 @@
+<p align="center">
+  <strong>BioHermes</strong> · built on <a href="https://github.com/Runchuan-BU/BioClaw">BioClaw</a> · powered by <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a>
+</p>
+
 # BioHermes 🧬
 
 > **An AI research assistant for bioinformatics — skills for SEC chromatography, ATAC-seq, BLAST, scRNA-seq, differential expression, mass-spec proteomics, structural biology, manuscript drafting, and 30+ more bio workflows — running on a production-grade agent runtime.**
