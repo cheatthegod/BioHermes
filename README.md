@@ -4,7 +4,7 @@
 
 # BioHermes 🧬
 
-> **An AI research assistant for bioinformatics — skills for SEC chromatography, ATAC-seq, BLAST, scRNA-seq, differential expression, mass-spec proteomics, structural biology, manuscript drafting, and 30+ more bio workflows — running on a production-grade agent runtime.**
+> **BioClaw on the Hermes Agent runtime. Same BioClaw bioinformatics workflows and skill library, packaged for Hermes-based chat, CLI, and gateway usage.**
 
 ```
 You:    I have SEC data for six protein constructs; analyze them and send me a PDF.
@@ -15,9 +15,21 @@ You:    📄 SEC_Analysis_Report.pdf (7 pages)
         Top candidate: Monomer_Only_09 (Q=10.0, monodisperse)
 ```
 
+## What This Repo Is
+
+**BioHermes is not a separate bioinformatics product line from BioClaw.** It is a Hermes Agent runtime edition of [BioClaw](https://github.com/Runchuan-BU/BioClaw): the same BioClaw-oriented bio workflows and skills, adapted to run on top of Hermes's Python agent runtime, terminal tooling, and messaging gateway.
+
+If you already know BioClaw, the shortest description is:
+
+- **BioClaw** is the bioinformatics agent/project identity and skill source of truth.
+- **BioHermes** is a **BioClaw-for-Hermes** distribution.
+- **Hermes Agent** provides the runtime layer underneath.
+
+So the name `BioHermes` is mainly about the runtime base, not a new scientific stack or a separate community push.
+
 ## What BioHermes gives you
 
-**A curated bioinformatics skill library** — 40 procedures carried over from [BioClaw](https://github.com/Runchuan-BU/BioClaw) and normalized to Hermes's skill format:
+**The BioClaw bioinformatics skill library on Hermes** — 40 procedures carried over from [BioClaw](https://github.com/Runchuan-BU/BioClaw) and normalized to Hermes's skill format:
 
 | Category | Skills |
 |----------|--------|
@@ -28,9 +40,9 @@ You:    📄 SEC_Analysis_Report.pdf (7 pages)
 | **Manuscript / reporting** | bio-manuscript-pipeline, bio-manuscript-text, bio-manuscript-refine, bio-manuscript-common, bio-figure-design, bio-ppt-generate, report-template |
 | **Meta / orchestration** | skills-hub, bio-task-system, bio-analysis-system, bio-dataset-search, bio-innovation-check, bio-human-feedback, bio-metric-system, bio-tools, agent-browser, pubmed-search |
 
-**A BioClaw-compatible file-I/O shim** (`biohermes/mcp_bioclaw_server.py`) — preserves the `send_image` / `send_file` semantics BioClaw skills rely on, with a `send_message` hand-off so outputs flow through any of Hermes's 7+ messaging platforms (Telegram, Slack, Discord, WhatsApp, Signal, Matrix, WeChat).
+**A BioClaw-compatible file-I/O shim** (`biohermes/mcp_bioclaw_server.py`) — preserves the `send_image` / `send_file` semantics BioClaw skills rely on, with a `send_message` hand-off so outputs flow through Hermes-supported messaging platforms (Telegram, Slack, Discord, WhatsApp, Signal, Matrix, WeChat).
 
-**Full Hermes Agent runtime underneath** — memory tool with auto-injected MEMORY.md / USER.md, smart model routing (simple turns → cheap model), shadow-git checkpoints before destructive ops, smart approvals via auxiliary LLM, 6 terminal backends (local / docker / ssh / singularity / daytona / modal), FTS5 session search, Atropos RL environments, cron scheduling.
+**The full Hermes Agent runtime underneath** — memory tool with auto-injected MEMORY.md / USER.md, smart model routing (simple turns → cheap model), shadow-git checkpoints before destructive ops, smart approvals via auxiliary LLM, 6 terminal backends (local / docker / ssh / singularity / daytona / modal), FTS5 session search, Atropos RL environments, cron scheduling.
 
 ## Quick start
 
@@ -55,9 +67,9 @@ biohermes mcp test bioclaw              # verify the file-I/O shim is up
 biohermes skills list                   # 74 bundled + 40 bioinformatics = 114
 ```
 
-## How it reaches BioClaw's closed loop
+## How it reaches the BioClaw closed loop
 
-BioClaw's user experience is: chat → agent runs bio workflow → PDF / image returns in the chat. BioHermes gets there using Hermes's native messaging gateway + `send_message` tool:
+BioClaw's core user experience is: chat -> agent runs a bio workflow -> PDF / image returns in the chat. BioHermes reproduces that loop using Hermes's native messaging gateway plus `send_message`:
 
 ```
  User on Telegram / Slack / Discord / WhatsApp / Signal / Matrix / WeChat
@@ -96,7 +108,7 @@ biohermes chat -q "run sec-report on <attachment> and send me the PDF"
 
 When no gateway is running, `send_image` / `send_file` fall back to the outbox directory — useful for local CLI dogfooding.
 
-## How BioHermes relates to the projects around it
+## Relationship to BioClaw and Hermes
 
 ```
                          NousResearch/hermes-agent          qwibitai/nanoclaw
@@ -109,9 +121,11 @@ When no gateway is running, `send_image` / `send_file` fall back to the outbox d
  (this repo)                                                           (skill source of truth)
 ```
 
-- **vs [Hermes Agent](https://github.com/NousResearch/hermes-agent)**: BioHermes is a hard fork of Hermes Agent at commit `4b6ff0eb` with a bio layer added on top. The upstream Hermes README is preserved unchanged as [`HERMES_UPSTREAM_README.md`](HERMES_UPSTREAM_README.md). To pull upstream improvements: `git fetch upstream && git merge upstream/main` (bio layer is pure-additive, conflicts only where upstream happens to touch `README.md` / `NOTICE` / `pyproject.toml`).
+- **[BioClaw](https://github.com/Runchuan-BU/BioClaw)** is the bioinformatics project identity and the skill source of truth. The migrated skills in this repo come from BioClaw, and BioClaw remains the place where the bio layer is conceptually rooted.
 
-- **vs [BioClaw](https://github.com/Runchuan-BU/BioClaw)**: BioClaw owns the bio skills. BioHermes consumes them via `biohermes/skill_migrator.py`, rewriting BioClaw's SKILL.md frontmatter into Hermes's schema and mapping `send_image` / `send_file` to the MCP shim. Re-run the migrator whenever BioClaw updates a skill.
+- **BioHermes** is the Hermes-runtime edition of BioClaw. It consumes BioClaw skills via `biohermes/skill_migrator.py`, rewriting BioClaw's `SKILL.md` frontmatter into Hermes's schema and mapping `send_image` / `send_file` to the MCP shim. When BioClaw updates its skills, this repo should re-run the migrator and stay aligned.
+
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** is the runtime base. BioHermes is a hard fork of Hermes Agent at commit `4b6ff0eb` with the BioClaw layer added on top. The upstream Hermes README is preserved unchanged as [`HERMES_UPSTREAM_README.md`](HERMES_UPSTREAM_README.md). To pull upstream improvements: `git fetch upstream && git merge upstream/main` (the BioClaw/BioHermes layer is mostly additive, so conflicts are expected mainly where upstream touches `README.md`, `NOTICE`, or `pyproject.toml`).
 
 ## Layout
 
