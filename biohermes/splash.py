@@ -278,34 +278,47 @@ def _collect_status_rows(profile_dir: Path, skill_names: list[str]) -> list[tupl
     cp = cfg.get("checkpoints") or {}
     ckpt = "enabled" if cp.get("enabled", False) else "off"
 
+    # MC-MOTD-style counts: "N/M" or "N/∞"
     bio_n = len(skill_names)
-    bio_str = f"{bio_n} workflows" if bio_n else "(not bundled)"
+    bio_str = f"{bio_n}/{bio_n} workflows" if bio_n else "0/0 (not bundled)"
 
     mcp_servers = list((cfg.get("mcp_servers") or {}).keys())
-    mcp_str = ", ".join(mcp_servers) if mcp_servers else "(none)"
+    mcp_str = f"{len(mcp_servers)}/∞  {', '.join(mcp_servers)}" if mcp_servers else "0/∞  (none)"
 
     gws = _active_gateways()
+    total_gws = len(_GATEWAY_VARS)
     if not gws:
-        gw = "⊘ CLI-only"
+        gw = f"0/{total_gws}  ⊘ CLI-only"
     elif len(gws) == 1:
-        gw = f"● {gws[0]}"
+        gw = f"1/{total_gws}  ● {gws[0]}"
     else:
-        gw = f"● {len(gws)} channels"
+        gw = f"{len(gws)}/{total_gws}  ● {', '.join(gws[:3])}" + (" …" if len(gws) > 3 else "")
 
     obn = _count_outbox(profile_dir)
 
+    # Ping-bar indicators ▮▮▮▮▯ (MC server status style)
+    provider_bars = _ping_bars(4)   # assume healthy default
+    smart_bars = _ping_bars(5 if sr.get("enabled") else 0)
+    gw_bars = _ping_bars(min(5, len(gws)))
+
     return [
-        ("Runtime",      "Hermes Agent · in-process"),
-        ("Provider",     prov_model),
-        ("Smart route",  smart),
-        ("Approvals",    approvals),
-        ("Checkpoints",  ckpt),
-        ("Bio skills",   bio_str),
-        ("MCP tools",    mcp_str),
-        ("Gateway",      gw),
-        ("Profile",      _shorten_path(profile_dir)),
-        ("Outbox",       f"{obn} files"),
+        ("Runtime",      "Hermes Agent · in-process", ""),
+        ("Provider",     prov_model, provider_bars),
+        ("Smart route",  smart, smart_bars),
+        ("Approvals",    approvals, ""),
+        ("Checkpoints",  ckpt, ""),
+        ("Bio skills",   bio_str, ""),
+        ("MCP tools",    mcp_str, ""),
+        ("Gateway",      gw, gw_bars),
+        ("Profile",      _shorten_path(profile_dir), ""),
+        ("Outbox",       f"{obn} files", ""),
     ]
+
+
+def _ping_bars(strength: int) -> str:
+    """MC-style ping indicator: 5 vertical bars, filled by strength 0-5."""
+    strength = max(0, min(5, strength))
+    return "▮" * strength + "▯" * (5 - strength)
 
 
 # ── Rendering primitives ───────────────────────────────────────────────────
@@ -320,24 +333,34 @@ def _colored_helix(R):
     return t
 
 
-def _status_frame(R, rows: list[tuple[str, str]], revealed: int):
+def _status_frame(R, rows: list[tuple[str, str, str]], revealed: int):
     Table = R["Table"]
     Text = R["Text"]
     grid = Table.grid(padding=(0, 1))
     grid.add_column(no_wrap=True, width=1)
     grid.add_column(no_wrap=True, width=12, style="bold #00d4ff")
     grid.add_column(overflow="ellipsis")
+    grid.add_column(no_wrap=True, width=5)  # ping bars
 
     spinner_chars = "◐◓◑◒"
     phase = int(time.time() * 10) % len(spinner_chars)
-    for i, (label, value) in enumerate(rows):
+    for i, row in enumerate(rows):
+        label, value, bars = row if len(row) == 3 else (row[0], row[1], "")
         if i < revealed:
             dot = Text("●", style="bold #00ff9c")
             val = Text(value, style="#e0fff8")
+            # colorize ping bars: filled=green, empty=dim
+            bar_text = Text()
+            for ch in bars:
+                if ch == "▮":
+                    bar_text.append(ch, style="bold #00ff9c")
+                else:
+                    bar_text.append(ch, style="dim #334444")
         else:
             dot = Text(spinner_chars[phase], style="dim #5a8a8a")
             val = Text("checking…", style="dim italic #5a8a8a")
-        grid.add_row(dot, Text(label, style="bold #00d4ff"), val)
+            bar_text = Text("▯▯▯▯▯", style="dim #334444")
+        grid.add_row(dot, Text(label, style="bold #00d4ff"), val, bar_text)
     return grid
 
 
@@ -356,19 +379,53 @@ def _glitch_title(R, locked_mask: list[bool], rng: random.Random) -> "object":
     return t
 
 
+def _motd_header(R, console_width: int, version: str):
+    """MC-MOTD-style two-line header: rainbow bracketed title + subtitle.
+    Rendered above the main panel.  Centered to the console width.
+    """
+    Text = R["Text"]
+    Align = R["Align"]
+    Group = R["Group"]
+
+    # Line 1: » ★ B I O H E R M E S ★ «   (gradient colors across letters)
+    title_palette = [
+        "#00ff9c", "#00ffaa", "#00d9b2", "#00d4ff",
+        "#00d4ff", "#7c5cff", "#a07fff", "#00d9b2", "#00ff9c",
+    ]
+    line1 = Text()
+    line1.append("» ", style="bold #00d9b2")
+    line1.append("★ ", style="bold #ffd24d")
+    for i, ch in enumerate(_TITLE):
+        color = title_palette[i % len(title_palette)]
+        line1.append(ch, style=f"bold {color}")
+        if i < len(_TITLE) - 1:
+            line1.append(" ", style="")
+    line1.append(" ★", style="bold #ffd24d")
+    line1.append(" «", style="bold #00d9b2")
+
+    # Line 2: subtitle — dim gray, MC server-description style
+    line2 = Text()
+    line2.append("A ", style="dim #5a8a8a")
+    line2.append("bioinformatics", style="bold #00ffaa")
+    line2.append(" edition  ·  ", style="dim #5a8a8a")
+    line2.append("built on ", style="dim #5a8a8a")
+    line2.append("BioClaw", style="bold #7c5cff")
+    line2.append("  ·  ", style="dim #5a8a8a")
+    line2.append("powered by ", style="dim #5a8a8a")
+    line2.append("Hermes Agent", style="bold #00d4ff")
+    line2.append(f"  v{version}", style="dim italic #5a8a8a")
+
+    return Group(Align.center(line1), Align.center(line2))
+
+
 def _full_title(R, version: str, install_mode: str):
+    # Compact panel title — the MC-MOTD header above carries the brand.
     Text = R["Text"]
     t = Text()
-    t.append("  🧬  ", style="bold #00ff9c")
-    t.append(_TITLE, style="bold #00ff9c")
-    t.append(f"  v{version}", style="dim #00d4ff")
+    t.append("  🧬 ", style="bold #00ff9c")
+    t.append("server status", style="bold #00d4ff")
     t.append("  ·  ", style="dim #5a8a8a")
     t.append(install_mode, style="dim italic #5a8a8a")
-    t.append("  ·  ", style="dim #5a8a8a")
-    t.append("built on ", style="dim #5a8a8a")
-    t.append("BioClaw", style="bold #7c5cff")
-    t.append(" · powered by ", style="dim #5a8a8a")
-    t.append("Hermes Agent", style="bold #00d4ff")
     t.append("  ")
     return t
 
@@ -478,8 +535,11 @@ def render(
 
     animate = os.environ.get("BIOHERMES_NO_ANIMATION", "").strip() not in {"1", "true", "yes"}
     final_title = _full_title(R, version, install_mode)
+    motd = _motd_header(R, console.size.width, version)
 
     try:
+        console.print()
+        console.print(motd)
         console.print()
         if animate:
             rng = random.Random(42)  # deterministic glitch for nicer feel
